@@ -47,6 +47,9 @@ npm install -g @openai/codex
 brew install --cask codex
 ```
 
+For this repository's Nix package and GitHub Pages binary cache, see
+[Installing with Nix](nix/README.md).
+
 Then simply run `codex` to get started.
 
 <details>

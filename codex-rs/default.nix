@@ -2,54 +2,100 @@
   cmake,
   llvmPackages,
   openssl,
-  libcap ? null,
+  libcap,
   rustPlatform,
   pkg-config,
   lib,
   stdenv,
+  fetchurl,
+  makeWrapper,
+  installShellFiles,
+  ripgrep,
   version ? "0.0.0",
-  ...
 }:
-rustPlatform.buildRustPackage (_: {
-  env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" (
-    [ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]
-  );
-  pname = "codex-rs";
+let
+  v8 = import ../nix/v8.nix { inherit fetchurl stdenv; };
+in
+rustPlatform.buildRustPackage {
+  pname = "codex";
   inherit version;
-  cargoLock.lockFile = ./Cargo.lock;
-  doCheck = false;
-  src = ./.;
+  src = lib.cleanSourceWith {
+    src = ./.;
+    filter = path: type: lib.cleanSourceFilter path type && !(lib.hasSuffix ".nix" path);
+  };
 
-  # Patch the workspace Cargo.toml so that cargo embeds the correct version in
-  # CARGO_PKG_VERSION (which the binary reads via env!("CARGO_PKG_VERSION")).
-  # On release commits the Cargo.toml already contains the real version and
-  # this sed is a no-op.
-  postPatch = ''
-    sed -i 's/^version = "0\.0\.0"$/version = "${version}"/' Cargo.toml
-  '';
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "appcontainer_common-0.8.0" = "sha256-XUkT2R+RYk9WIqgKnmIAagNW4xOTyp4bWHmQL1iznHw=";
+      "crossterm-0.29.0" = "sha256-cQxQQuV+YEutuQiPurXVISq6F/99vCEk8qe5PU8BCSo=";
+      "nucleo-0.5.0" = "sha256-Hm4SxtTSBrcWpXrtSqeO0TACbUxq3gizg1zD/6Yw/sI=";
+      "runfiles-0.1.0" = "sha256-uJpVLcQh8wWZA3GPv9D8Nt43EOirajfDJ7eq/FB+tek=";
+      "tokio-tungstenite-0.28.0" = "sha256-V1xmnrfRWOcZZogelZEA4vvyMj2awCfHVA5/glQ6KAI=";
+      "tungstenite-0.27.0" = "sha256-VVHhk7l9J/sEmG3q/UuV/sQ3f+fGsmq5vumSy8vbMvw=";
+    };
+  };
+
+  # Build the user-facing CLI and its code execution helper, not the workspace.
+  cargoBuildFlags = [
+    "-p"
+    "codex-cli"
+    "--bin"
+    "codex"
+    "-p"
+    "codex-code-mode-host"
+    "--bin"
+    "codex-code-mode-host"
+  ];
+  doCheck = false;
+
   nativeBuildInputs = [
     cmake
     llvmPackages.clang
-    llvmPackages.libclang.lib
-    openssl
     pkg-config
-  ] ++ lib.optionals stdenv.isLinux [
-    libcap
+    makeWrapper
+    installShellFiles
   ];
-
-  cargoLock.outputHashes = {
-    "crossterm-0.29.0" = "sha256-ewiWWQPEU1lSUHzmZTiO5yes5luIaQ9TrvCNnTWhxpE=";
-    "nucleo-0.5.0" = "sha256-Hm4SxtTSBrcWpXrtSqeO0TACbUxq3gizg1zD/6Yw/sI=";
-    "nucleo-matcher-0.3.1" = "sha256-Hm4SxtTSBrcWpXrtSqeO0TACbUxq3gizg1zD/6Yw/sI=";
-    "runfiles-0.1.0" = "sha256-uJpVLcQh8wWZA3GPv9D8Nt43EOirajfDJ7eq/FB+tek=";
-    "tokio-tungstenite-0.28.0" = "sha256-hJAkvWxDjB9A9GqansahWhTmj/ekcelslLUTtwqI7lw=";
-    "tungstenite-0.27.0" = "sha256-AN5wql2X2yJnQ7lnDxpljNw0Jua40GtmT+w3wjER010=";
+  buildInputs = [ openssl ] ++ lib.optionals stdenv.hostPlatform.isLinux [ libcap ];
+  env = {
+    CC = "${llvmPackages.clang}/bin/clang";
+    CXX = "${llvmPackages.clang}/bin/clang++";
+    LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+    RUSTY_V8_ARCHIVE = v8.archive;
+    RUSTY_V8_SRC_BINDING_PATH = v8.bindings;
+    # Release packages do not need the symbolication data used by upstream CI.
+    CARGO_PROFILE_RELEASE_DEBUG = "0";
   };
 
-  meta = with lib; {
-    description = "OpenAI Codex command‑line interface rust implementation";
-    license = licenses.asl20;
-    homepage = "https://github.com/openai/codex";
+  postInstall = ''
+    wrapProgram $out/bin/codex --suffix PATH : ${lib.makeBinPath [ ripgrep ]}
+    installShellCompletion --cmd codex \
+      --bash <($out/bin/codex completion bash) \
+      --fish <($out/bin/codex completion fish) \
+      --zsh <($out/bin/codex completion zsh)
+  '';
+
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    export HOME="$TMPDIR/codex-home"
+    mkdir -p "$HOME"
+    $out/bin/codex --version
+    $out/bin/codex --help > /dev/null
+    test -x $out/bin/codex-code-mode-host
+    runHook postInstallCheck
+  '';
+
+  meta = {
+    description = "OpenAI Codex command-line interface";
+    license = lib.licenses.asl20;
+    homepage = "https://github.com/anythingabout-community/codex";
     mainProgram = "codex";
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+      "x86_64-darwin"
+      "aarch64-darwin"
+    ];
   };
-})
+}

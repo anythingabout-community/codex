@@ -1,0 +1,129 @@
+name: Nix CLI and Pages cache
+
+on:
+  pull_request:
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - "codex-rs/**"
+      - ".github/workflows/nix.yml"
+  push:
+    branches: [fork, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-pages-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: x86_64-darwin
+            runner: macos-15-intel
+          - system: aarch64-darwin
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check flake outputs
+        run: nix flake check --accept-flake-config --no-build --all-systems
+
+      - name: Build and smoke-test the CLI
+        run: nix build --accept-flake-config --print-build-logs .#packages.${{ matrix.system }}.codex
+
+      - name: Export signed runtime closure
+        if: github.event_name != 'pull_request'
+        env:
+          NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+          NIX_SYSTEM: ${{ matrix.system }}
+        run: bash nix/export-cache.sh
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: github.event_name != 'pull_request'
+        with:
+          name: nix-cache-${{ matrix.system }}
+          path: cache/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: nix-cache-*
+          path: public/
+          merge-multiple: true
+
+      - name: Check Pages size and create landing page
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import html
+          import os
+          from pathlib import Path
+
+          root = Path("public")
+          (root / ".nojekyll").touch()
+          repo = html.escape(os.environ["REPOSITORY"])
+          rev = html.escape(os.environ["REVISION"])
+          key = html.escape((root / "cache-public-key.txt").read_text().strip())
+          (root / "index.html").write_text(
+              "<!doctype html><meta charset=utf-8><title>Codex Nix cache</title>"
+              f"<h1>Codex CLI Nix cache</h1><p>Repository: {repo}</p>"
+              f"<p>Cached revision: <code>{rev}</code></p>"
+              f"<p>Public key: <code>{key}</code></p>"
+              f"<pre>nix profile install github:{repo}/{rev}#codex</pre>"
+              "<p>Add this page's URL to extra-substituters and the public key "
+              "to extra-trusted-public-keys in your Nix configuration before installing.</p>"
+          )
+          size = sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
+          # Leave space for the Pages artifact's tar headers below the 1 GB limit.
+          if size > 950_000_000:
+              raise SystemExit(f"Cache is too large for GitHub Pages: {size:,} bytes")
+          print(f"Pages cache: {size:,} bytes")
+          PY
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: public/
+      - name: Deploy binary cache
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
