@@ -9,6 +9,7 @@
   };
 
   inputs = {
+    crane.url = "github:ipetkov/crane";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -19,6 +20,7 @@
   outputs =
     {
       self,
+      crane,
       nixpkgs,
       rust-overlay,
       ...
@@ -50,10 +52,7 @@
           toolchain = pkgs.rust-bin.stable.${rust.toolchain.channel}.minimal;
           codex = pkgs.callPackage ./codex-rs {
             inherit version;
-            rustPlatform = pkgs.makeRustPlatform {
-              cargo = toolchain;
-              rustc = toolchain;
-            };
+            craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
           };
         in
         {

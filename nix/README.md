@@ -30,7 +30,7 @@ extra-substituters = https://anythingabout-community.github.io/codex
 extra-trusted-public-keys = anythingabout-community-codex-1:iqqNKnjHxIt69VbEDd7f2IcMtMjTe3hUs446pl60PFA=
 ```
 
-Replace the public-key placeholder with the entire line in
+The public key is also stored in
 [`cache-public-key.txt`](cache-public-key.txt). Keep the standard
 `https://cache.nixos.org` cache enabled. No private key or GitHub login is needed
 to download packages.
@@ -84,12 +84,35 @@ under GitHub Pages' 1 GB site limit. Build dependencies and intermediate Rust
 outputs are not published. GitHub Actions artifacts are temporary transport;
 users download from Pages as a normal Nix binary cache.
 
+## CI build caches
+
+The workflow uses three complementary cache layers:
+
+| Layer                 | Contents                                                | Consumers                       |
+| --------------------- | ------------------------------------------------------- | ------------------------------- |
+| Magic Nix Cache       | Nix build outputs stored in GitHub Actions Cache        | Subsequent CI builds            |
+| Crane `buildDepsOnly` | Compiled Rust dependencies in a separate Nix derivation | CLI builds after source changes |
+| GitHub Pages          | Signed CLI packages and their runtime dependencies      | Users installing Codex          |
+
+Magic Nix Cache runs after Nix installation on each platform. It explicitly uses
+GitHub Actions Cache; FlakeHub caching is disabled. No additional cache token is
+needed. GitHub's cache visibility, capacity, and eviction rules still apply.
+
+Crane builds the CLI and code-mode host using a shared dependency artifact.
+Changes to Rust source files reuse compiled third-party dependencies when the
+dependency manifests, lockfile, toolchain, build flags, and native dependencies
+remain unchanged. Workspace crates still rebuild. This is release dependency
+caching, not a shared Cargo `target/` directory or an sccache service.
+Magic Nix Cache persists these dependency artifacts between CI runs; they are
+excluded from the user-facing Pages cache. A cold or evicted cache requires a
+full build and does not prevent installation.
+
 ## Maintaining the package
 
-- `flake.lock` pins Nixpkgs and Rust overlay. Nixpkgs 26.05 retains Intel Mac
+- `flake.lock` pins Nixpkgs, Rust overlay, and Crane. Nixpkgs 26.05 retains Intel Mac
   support; check platform support before changing that branch.
 - The Rust version comes from `codex-rs/rust-toolchain.toml`.
-- When Git dependencies change in `Cargo.lock`, update `cargoLock.outputHashes`
+- When Git dependencies change in `Cargo.lock`, update `cargoDeps.outputHashes`
   in `codex-rs/default.nix` using the hashes reported by Nix.
 - When V8 changes, update `nix/v8.nix` from the release manifests verified
   against `third_party/v8/rusty_v8_*_release_manifests.sha256`.
