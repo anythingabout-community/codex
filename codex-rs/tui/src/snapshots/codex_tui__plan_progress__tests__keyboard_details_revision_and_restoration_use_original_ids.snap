@@ -1,0 +1,12 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 207
+expression: "snapshot(&progress, 80)"
+---
+• Task List  1/3                                                                
+  └ □ A03 Test                                            0:00  ──────────  1:00
+  › □ legacy-task-42 Revised                              1:30  ━━━━━━━━━━  1:00
+    ✔ A01 Inspect                                         0:25  ━━━━━━━━━━  1:00
+                                                                                
+    A03                   legacy-task-42                   A01                  
+    ──────────────────────┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━

@@ -9,6 +9,14 @@ use codex_protocol::models::ResponseItem;
 
 pub(crate) fn without_notification_media(notification: ServerNotification) -> ServerNotification {
     match notification {
+        ServerNotification::ThreadSupervisorActivity(mut notification) => {
+            if let Some(activity) = codex_app_server_protocol::SupervisorActivity::from_notification(
+                without_notification_media(notification.activity.clone().into_notification()),
+            ) {
+                notification.activity = activity;
+            }
+            ServerNotification::ThreadSupervisorActivity(notification)
+        }
         ServerNotification::ItemStarted(mut notification) => {
             notification.item = without_thread_item_media(notification.item);
             ServerNotification::ItemStarted(notification)
@@ -65,6 +73,8 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::SkillsChanged(_)
         | ServerNotification::ThreadNameUpdated(_)
         | ServerNotification::ThreadAttachmentUpdated(_)
+        | ServerNotification::ThreadSupervisorUpdated(_)
+        | ServerNotification::ThreadPlanUpdated(_)
         | ServerNotification::ThreadGoalUpdated(_)
         | ServerNotification::ThreadGoalCleared(_)
         | ServerNotification::ThreadQueueChanged(_)
@@ -188,7 +198,8 @@ fn without_thread_item_media(mut item: ThreadItem) -> ThreadItem {
             });
         }
         ThreadItem::ImageGeneration(item) => item.result.clear(),
-        ThreadItem::HookPrompt { .. }
+        ThreadItem::ContinuousPlanningMessages(_)
+        | ThreadItem::HookPrompt { .. }
         | ThreadItem::AgentMessage { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }

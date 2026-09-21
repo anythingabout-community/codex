@@ -119,6 +119,9 @@ impl AgentNavigationState {
         agent_role: Option<String>,
         is_closed: bool,
     ) {
+        if agent_role.as_deref() == Some("implementer") {
+            self.mark_parent_owned(thread_id);
+        }
         if !self.threads.contains_key(&thread_id) {
             self.order.push(thread_id);
         }
@@ -345,7 +348,11 @@ impl AgentNavigationState {
                             .as_deref()
                             .filter(|agent_path| !agent_path.trim().is_empty())
                     {
-                        return format!("`{agent_path}`");
+                        return if entry.agent_role.as_deref() == Some("supervisor") {
+                            format!("`{agent_path}` [Supervisor]")
+                        } else {
+                            format!("`{agent_path}`")
+                        };
                     }
                     format_agent_picker_item_name(
                         entry.agent_nickname.as_deref(),
@@ -394,7 +401,7 @@ mod tests {
 
     fn populated_state() -> (AgentNavigationState, ThreadId, ThreadId, ThreadId) {
         let mut state = AgentNavigationState::default();
-        let main_thread_id =
+        let implementer_thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
         let first_agent_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000102").expect("valid thread");
@@ -402,7 +409,7 @@ mod tests {
             ThreadId::from_string("00000000-0000-0000-0000-000000000103").expect("valid thread");
 
         state.upsert(
-            main_thread_id,
+            implementer_thread_id,
             /*agent_nickname*/ None,
             /*agent_role*/ None,
             /*is_closed*/ false,
@@ -420,12 +427,17 @@ mod tests {
             /*is_closed*/ false,
         );
 
-        (state, main_thread_id, first_agent_id, second_agent_id)
+        (
+            state,
+            implementer_thread_id,
+            first_agent_id,
+            second_agent_id,
+        )
     }
 
     #[test]
     fn upsert_preserves_first_seen_order() {
-        let (mut state, main_thread_id, first_agent_id, second_agent_id) = populated_state();
+        let (mut state, implementer_thread_id, first_agent_id, second_agent_id) = populated_state();
 
         state.upsert(
             first_agent_id,
@@ -436,13 +448,14 @@ mod tests {
 
         assert_eq!(
             state.ordered_thread_ids(),
-            vec![main_thread_id, first_agent_id, second_agent_id]
+            vec![implementer_thread_id, first_agent_id, second_agent_id]
         );
     }
 
     #[test]
     fn parent_owned_state_is_removed_with_thread_metadata() {
-        let (mut state, _main_thread_id, first_agent_id, second_agent_id) = populated_state();
+        let (mut state, _implementer_thread_id, first_agent_id, second_agent_id) =
+            populated_state();
 
         state.mark_parent_owned(first_agent_id);
         assert!(state.is_parent_owned(first_agent_id));
@@ -474,18 +487,21 @@ mod tests {
 
     #[test]
     fn adjacent_thread_id_wraps_in_spawn_order() {
-        let (state, main_thread_id, first_agent_id, second_agent_id) = populated_state();
+        let (state, implementer_thread_id, first_agent_id, second_agent_id) = populated_state();
 
         assert_eq!(
             state.adjacent_thread_id(Some(second_agent_id), AgentNavigationDirection::Next),
-            Some(main_thread_id)
+            Some(implementer_thread_id)
         );
         assert_eq!(
             state.adjacent_thread_id(Some(second_agent_id), AgentNavigationDirection::Previous),
             Some(first_agent_id)
         );
         assert_eq!(
-            state.adjacent_thread_id(Some(main_thread_id), AgentNavigationDirection::Previous),
+            state.adjacent_thread_id(
+                Some(implementer_thread_id),
+                AgentNavigationDirection::Previous
+            ),
             Some(second_agent_id)
         );
     }
@@ -502,14 +518,14 @@ mod tests {
 
     #[test]
     fn active_agent_label_tracks_current_thread() {
-        let (state, main_thread_id, first_agent_id, _) = populated_state();
+        let (state, implementer_thread_id, first_agent_id, _) = populated_state();
 
         assert_eq!(
-            state.active_agent_label(Some(first_agent_id), Some(main_thread_id)),
+            state.active_agent_label(Some(first_agent_id), Some(implementer_thread_id)),
             Some("Robie [explorer]".to_string())
         );
         assert_eq!(
-            state.active_agent_label(Some(main_thread_id), Some(main_thread_id)),
+            state.active_agent_label(Some(implementer_thread_id), Some(implementer_thread_id)),
             Some("Main [default]".to_string())
         );
     }

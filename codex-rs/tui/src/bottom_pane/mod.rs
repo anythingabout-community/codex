@@ -267,6 +267,7 @@ pub(crate) struct BottomPane {
 
     /// Inline status indicator shown above the composer while a task is running.
     status: Option<StatusIndicatorWidget>,
+    plan_progress: Option<crate::plan_progress::PlanProgress>,
     /// Running-hook summary supplied by the lifecycle owner after its reveal delay.
     hook_status_message: Option<String>,
     inline_banner: Option<actionable_banner::InlineBanner>,
@@ -296,6 +297,8 @@ pub(crate) struct BottomPaneParams {
     pub(crate) animations_enabled: bool,
     pub(crate) skills: Option<Vec<SkillMetadata>>,
 }
+
+mod plan_progress;
 
 impl BottomPane {
     pub fn new(params: BottomPaneParams) -> Self {
@@ -343,6 +346,7 @@ impl BottomPane {
             disable_paste_burst,
             is_task_running: false,
             status: None,
+            plan_progress: None,
             hook_status_message: None,
             inline_banner: None,
             status_timer: crate::status_indicator_widget::StatusTimer::default(),
@@ -841,6 +845,13 @@ impl BottomPane {
             view.keymap_contexts()
         } else if let Some(questions) = self.questions.as_ref().filter(|q| q.expanded) {
             questions.keymap_contexts()
+        } else if self.no_modal_or_popup_active()
+            && self
+                .plan_progress
+                .as_ref()
+                .is_some_and(crate::plan_progress::PlanProgress::focused)
+        {
+            KeymapContextSet::new(crate::keymap::KeymapContext::List)
         } else {
             self.composer.keymap_contexts()
         }
@@ -1585,7 +1596,7 @@ impl BottomPane {
             .is_some_and(|(name, _, _)| matches!(name, "agents" | "subagents"));
 
         self.keymap.chat.interrupt_turn.is_pressed(key_event)
-            && self.is_task_running
+            && (self.is_task_running || self.has_active_timed_plan())
             && !(is_agent_command && key_event.code == KeyCode::Esc)
             && self.no_modal_or_popup_active()
             && !self.composer_should_handle_vim_insert_escape(key_event)
@@ -1881,6 +1892,9 @@ impl BottomPane {
         log_id: u64,
         entry_count: usize,
     ) {
+        if self.thread_id.is_some_and(|previous| previous != thread_id) {
+            self.plan_progress = None;
+        }
         self.thread_id = Some(thread_id);
         self.composer
             .set_history_metadata(thread_id, log_id, entry_count);
@@ -1996,13 +2010,16 @@ impl BottomPane {
             {
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(banner));
             }
-            if let Some(status) = self.status_widget() {
+            if let Some(plan) = &self.plan_progress {
+                flex.push(/*flex*/ 0, RenderableItem::Borrowed(plan));
+            } else if let Some(status) = self.status_widget() {
                 flex.push(
                     /*flex*/ 0,
                     RenderableItem::Owned(Box::new(status.with_timer(&self.status_timer))),
                 );
             }
-            if self.status.is_none()
+            if self.plan_progress.is_none()
+                && self.status.is_none()
                 && let Some(message) = &self.hook_status_message
             {
                 flex.push(
@@ -2015,7 +2032,10 @@ impl BottomPane {
             }
             // Avoid double-surfacing the same summary and avoid adding an extra
             // row while the status line is already visible.
-            if self.status_widget().is_none() && !self.unified_exec_footer.is_empty() {
+            if self.plan_progress.is_none()
+                && self.status_widget().is_none()
+                && !self.unified_exec_footer.is_empty()
+            {
                 flex.push(
                     /*flex*/ 0,
                     RenderableItem::Borrowed(&self.unified_exec_footer),
@@ -2030,7 +2050,8 @@ impl BottomPane {
                 || !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer = self.status_widget().is_some()
+            let has_status_or_footer = self.plan_progress.is_some()
+                || self.status_widget().is_some()
                 || self.hook_status_message.is_some()
                 || !self.unified_exec_footer.is_empty();
             let has_inline_previews = has_pending_thread_approvals || has_pending_input;

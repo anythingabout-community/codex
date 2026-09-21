@@ -93,7 +93,10 @@ pub(crate) fn thread_items_to_transcript_cells(
         thread_id.and_then(|thread_id| InlineVisualizationContext::from_config(config, thread_id))
     });
     let mut cells: TranscriptCells = Vec::new();
-    for item in items {
+    for item in items
+        .into_iter()
+        .flat_map(ThreadItem::into_visible_messages)
+    {
         match item {
             ThreadItem::UserMessage {
                 id,
@@ -307,7 +310,8 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }
-        | ThreadItem::Sleep(_) => return None,
+        | ThreadItem::Sleep(_)
+        | ThreadItem::ContinuousPlanningMessages(_) => return None,
     };
     (!lines.is_empty()).then(|| PlainHistoryCell::new(lines))
 }

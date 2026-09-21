@@ -13,6 +13,10 @@ pub(super) fn can_accept_direct_input(
     multi_agent_version: Option<MultiAgentVersion>,
     session_source: &SessionSource,
 ) -> bool {
+    if matches!(session_source, SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_role: Some(role), .. }) if role == "implementer")
+    {
+        return false;
+    }
     multi_agent_version != Some(MultiAgentVersion::V2)
         || !matches!(
             session_source,

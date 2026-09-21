@@ -11,6 +11,12 @@ pub(super) async fn test_config() -> Config {
         .tempdir()
         .expect("tempdir")
         .keep();
+    // Embedded app-server reloads configuration when starting each thread.
+    std::fs::write(
+        codex_home.join("config.toml"),
+        "[features]\ncontinuous_planning = false\n",
+    )
+    .expect("write legacy UI test configuration");
     let mut config =
         Config::load_default_with_cli_overrides_for_codex_home(codex_home.clone(), Vec::new())
             .await
@@ -23,6 +29,11 @@ pub(super) async fn test_config() -> Config {
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
+    // Legacy Plan/Goal coverage uses the original UI; Supervisor tests enable it explicitly.
+    config
+        .features
+        .disable(Feature::ContinuousPlanning)
+        .expect("disable Supervisor in legacy fixture");
     config
 }
 

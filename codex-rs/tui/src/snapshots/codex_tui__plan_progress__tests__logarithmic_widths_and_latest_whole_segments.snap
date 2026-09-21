@@ -1,0 +1,12 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 163
+expression: "snapshot(&progress, 12)"
+---
+• Task List 
+  └ □ A01 I…
+    □ A02 I…
+    □ A03 T…
+            
+    A02 A03 
+    ━───┼───

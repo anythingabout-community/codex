@@ -252,6 +252,12 @@ impl ChatWidget {
     ) {
         let from_replay = render_source.is_replay();
         let replay_kind = render_source.replay_kind();
+        if matches!(&item, ThreadItem::ContinuousPlanningMessages(_)) {
+            for message in item.into_visible_messages() {
+                self.handle_thread_item(message, turn_id.clone(), render_source);
+            }
+            return;
+        }
         match item {
             ThreadItem::UserMessage {
                 content, client_id, ..
@@ -446,7 +452,7 @@ impl ChatWidget {
             }),
             item @ ThreadItem::SubAgentActivity { .. } => self.on_sub_agent_activity(item),
             ThreadItem::DynamicToolCall { .. } => {}
-            ThreadItem::Sleep(_) => {}
+            ThreadItem::Sleep(_) | ThreadItem::ContinuousPlanningMessages(_) => {}
         }
 
         if matches!(replay_kind, Some(ReplayKind::ThreadSnapshot)) && turn_id.is_empty() {

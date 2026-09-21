@@ -1,0 +1,8 @@
+---
+source: tui/src/chatwidget/tests/supervisor_tests.rs
+assertion_line: 116
+expression: "rendered[0]"
+---
+• First result received.
+
+• I will verify its timestamp.

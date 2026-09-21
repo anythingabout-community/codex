@@ -1,0 +1,46 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 237
+expression: "frames.join(\"\\n\\n\")"
+---
+height 1
+• Task List  1/3                        
+
+height 2
+• Task List  1/3                        
+  └ □ A03 Test    0:00  ──────────  1:00
+
+height 3
+• Task List  1/3                        
+  └ □ A02 Implement          0:30 → 1:00
+    □ A03 Test               0:00 → 1:00
+
+height 4
+• Task List  1/3                        
+  └ ✔ A01 Inspect            0:25 → 1:00
+    □ A02 Implement          0:30 → 1:00
+    □ A03 Test               0:00 → 1:00
+
+height 5
+• Task List  1/3                        
+  └ ✔ A01 Inspect            0:25 → 1:00
+    □ A02 Implement          0:30 → 1:00
+    □ A03 Test               0:00 → 1:00
+                                        
+
+height 6
+• Task List  1/3                        
+  └ ✔ A01 Inspect            0:25 → 1:00
+    □ A02 Implement          0:30 → 1:00
+    □ A03 Test               0:00 → 1:00
+    A01       A02         A03           
+    ━━━━━━━━━━┿━━━━━──────┼─────────────
+
+height 7
+• Task List  1/3                        
+  └ ✔ A01 Inspect            0:25 → 1:00
+    □ A02 Implement          0:30 → 1:00
+    □ A03 Test               0:00 → 1:00
+                                        
+    A01       A02         A03           
+    ━━━━━━━━━━┿━━━━━──────┼─────────────

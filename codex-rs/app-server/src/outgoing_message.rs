@@ -46,6 +46,9 @@ pub(crate) type ClientRequestResult = std::result::Result<Result, JSONRPCErrorEr
 static IN_FLIGHT_REQUESTS: Gauge = Gauge::new("app.requests.in_flight");
 static PENDING_SERVER_REQUESTS: Gauge = Gauge::new("app.server_requests.pending");
 
+#[path = "outgoing_message_supervisor.rs"]
+mod supervisor;
+
 #[path = "user_verification_auth.rs"]
 mod user_verification_auth;
 
@@ -140,6 +143,7 @@ pub(crate) struct ThreadScopedOutgoingMessageSender {
     outgoing: Arc<OutgoingMessageSender>,
     connection_ids: Arc<Vec<ConnectionId>>,
     thread_id: ThreadId,
+    supervisor: Option<Arc<codex_supervisor_extension::ImplementerBinding>>,
 }
 
 struct PendingCallbackEntry {
@@ -162,13 +166,49 @@ impl ThreadScopedOutgoingMessageSender {
             outgoing,
             connection_ids: Arc::new(connection_ids),
             thread_id,
+            supervisor: None,
         }
+    }
+
+    pub(crate) fn with_supervisor(
+        mut self,
+        binding: Option<Arc<codex_supervisor_extension::ImplementerBinding>>,
+    ) -> Self {
+        self.supervisor = binding;
+        self
     }
 
     pub(crate) async fn send_request(
         &self,
-        payload: ServerRequestPayload,
+        mut payload: ServerRequestPayload,
     ) -> (RequestId, oneshot::Receiver<ClientRequestResult>) {
+        if let Some(owner) = self
+            .supervisor
+            .as_ref()
+            .and_then(|binding| binding.supervisor_thread_id())
+        {
+            match &mut payload {
+                ServerRequestPayload::CommandExecutionRequestApproval(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                ServerRequestPayload::FileChangeRequestApproval(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                ServerRequestPayload::PermissionsRequestApproval(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                ServerRequestPayload::ToolRequestUserInput(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                ServerRequestPayload::DynamicToolCall(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                ServerRequestPayload::McpServerElicitationRequest(params) => {
+                    params.thread_id = owner.to_string()
+                }
+                _ => {}
+            }
+        }
         self.outgoing
             .send_request_to_connections(
                 Some(self.connection_ids.as_slice()),
@@ -193,6 +233,26 @@ impl ThreadScopedOutgoingMessageSender {
     }
 
     pub(crate) async fn send_server_notification(&self, notification: ServerNotification) {
+        let notification = if self.supervisor.is_some() {
+            if matches!(&notification, ServerNotification::ServerRequestResolved(_)) {
+                let Some(notification) = self.supervisor_notification(notification).await else {
+                    return;
+                };
+                notification
+            } else {
+                if let Some(activity) = self.supervisor_notification(notification.clone()).await {
+                    self.outgoing
+                        .send_server_notification_to_connections(
+                            self.connection_ids.as_slice(),
+                            activity,
+                        )
+                        .await;
+                }
+                notification
+            }
+        } else {
+            notification
+        };
         self.outgoing
             .analytics_events_client
             .track_notification(&notification);
@@ -588,11 +648,38 @@ impl OutgoingMessageSender {
         thread_id: ThreadId,
     ) -> Vec<ServerRequest> {
         let request_id_to_callback = self.request_id_to_callback.lock().await;
+        let visible_thread_id = thread_id.to_string();
         let mut requests = request_id_to_callback
             .values()
             .filter_map(|entry| {
-                (entry.thread_id == Some(thread_id) && entry.verification_owner.is_none())
-                    .then_some(entry.request.clone())
+                // Replay uses the conversation shown to the user. Cancellation and callback
+                // ownership still use the execution thread that created the request.
+                let visible = match &entry.request {
+                    ServerRequest::CommandExecutionRequestApproval { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::FileChangeRequestApproval { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::PermissionsRequestApproval { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::ToolRequestUserInput { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::DynamicToolCall { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::McpServerElicitationRequest { params, .. } => {
+                        params.thread_id == visible_thread_id
+                    }
+                    ServerRequest::ApplyPatchApproval { .. }
+                    | ServerRequest::ExecCommandApproval { .. }
+                    | ServerRequest::ChatgptAuthTokensRefresh { .. }
+                    | ServerRequest::AttestationGenerate { .. }
+                    | ServerRequest::CurrentTimeRead { .. } => entry.thread_id == Some(thread_id),
+                };
+                (visible && entry.verification_owner.is_none()).then_some(entry.request.clone())
             })
             .collect::<Vec<_>>();
         requests.sort_by(|left, right| left.id().cmp(right.id()));

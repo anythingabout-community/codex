@@ -1,0 +1,14 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 188
+expression: "snapshot(&progress, 64)"
+---
+• Task List  3/8                                                
+  └ □ A04 Test                            0:00  ──────────  1:00
+    □ A05 Test                            0:00  ──────────  1:00
+    □ A06 Test                            0:00  ──────────  1:00
+    □ A07 Test                            0:00  ──────────  1:00
+    □ A08 Test                            0:00  ──────────  1:00
+                                                                
+    S01     A04       A05       A06       A07       A08         
+    ━━━━━━━━┼─────────┼─────────┼─────────┼─────────┼───────────

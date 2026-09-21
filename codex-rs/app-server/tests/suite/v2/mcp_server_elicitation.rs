@@ -1492,6 +1492,7 @@ mcp_oauth_credentials_store = "file"
 
 [features]
 apps = true
+continuous_planning = false
 
 [model_providers.mock_provider]
 name = "Mock provider for test"

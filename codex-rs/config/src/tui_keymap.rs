@@ -94,6 +94,8 @@ impl KeybindingsSpec {
 pub struct TuiGlobalKeymap {
     /// Open the shared agent-session overview.
     pub open_agents: Option<KeybindingsSpec>,
+    /// Focus or leave the Supervisor task list.
+    pub focus_plan: Option<KeybindingsSpec>,
     /// Open the transcript overlay.
     pub open_transcript: Option<KeybindingsSpec>,
     /// Open the external editor for the current draft.

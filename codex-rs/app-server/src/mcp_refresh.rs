@@ -335,6 +335,8 @@ enabled = false
                         analytics_events_client: codex_analytics::AnalyticsEventsClient::disabled(),
                         thread_manager: thread_manager.clone(),
                         goal_service: Arc::new(codex_goal_extension::GoalService::new()),
+                        plan_update_sink: Arc::new(|_, _| {}),
+                        supervisor_update_sink: Arc::new(|_, _| {}),
                         environment_manager: Arc::clone(&environment_manager),
                         executor_skill_provider: Arc::clone(&executor_skill_provider),
                         git_attribution_base_url: good_config.chatgpt_base_url.clone(),

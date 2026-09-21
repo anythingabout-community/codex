@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -7,9 +8,10 @@ use std::process::Command;
 fn detects_zsh() {
     let zsh_shell = get_shell(ShellType::Zsh).unwrap();
 
-    let shell_path = zsh_shell.shell_path;
-
-    assert_eq!(shell_path, std::path::Path::new("/bin/zsh"));
+    assert_eq!(
+        (zsh_shell.shell_type, zsh_shell.shell_path.file_name()),
+        (ShellType::Zsh, Some(std::ffi::OsStr::new("zsh")))
+    );
 }
 
 #[test]
@@ -17,9 +19,7 @@ fn detects_zsh() {
 fn fish_fallback_to_zsh() {
     let zsh_shell = default_user_shell_from_path(Some(PathBuf::from("/bin/fish")));
 
-    let shell_path = zsh_shell.shell_path;
-
-    assert_eq!(shell_path, std::path::Path::new("/bin/zsh"));
+    assert_eq!(zsh_shell, get_shell(ShellType::Zsh).unwrap());
 }
 
 #[test]

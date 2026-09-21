@@ -25,6 +25,8 @@ mod responses;
 mod runtime;
 mod socks5;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod upstream;
 #[cfg(target_os = "windows")]
 mod windows_proxy_ingress;

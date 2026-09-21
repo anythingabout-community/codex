@@ -254,6 +254,13 @@ impl App {
         agent_role: Option<String>,
         is_closed: bool,
     ) {
+        let agent_role = if self.config.features.enabled(Feature::ContinuousPlanning)
+            && agent_role.as_deref() != Some("implementer")
+        {
+            Some("supervisor".to_string())
+        } else {
+            agent_role
+        };
         self.chat_widget.set_collab_agent_metadata(
             thread_id,
             agent_nickname.clone(),
@@ -725,6 +732,11 @@ impl App {
         self.pending_thread_switch_resets += 1;
         self.app_event_tx
             .send(AppEvent::ResetTranscriptForThreadSwitch);
+        let role = self
+            .agent_navigation
+            .get(&thread_id)
+            .and_then(|entry| entry.agent_role.as_deref());
+        self.chat_widget.set_supervisor_conversation_role(role);
         self.replay_thread_snapshot(snapshot, resume_restored_queue);
         if external_writer {
             self.chat_widget.show_external_writer_thread();

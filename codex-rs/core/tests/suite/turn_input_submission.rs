@@ -832,3 +832,54 @@ async fn start_or_steer_turn_requires_matching_active_output_schema() {
     assert!(!second_request.contains("rejected steer"));
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn contextual_batch_starts_once_and_preserves_fragment_provenance() -> anyhow::Result<()> {
+    use codex_core::context::ContextualUserFragment;
+    use codex_core::context::ContinuousPlanningFragment;
+    let server = responses::start_mock_server().await;
+    let response = responses::mount_sse_once(
+        &server,
+        responses::sse(vec![
+            ev_response_created("context-batch"),
+            responses::ev_assistant_message("result", "Checked."),
+            ev_completed("context-batch"),
+        ]),
+    )
+    .await;
+    let test = test_codex().build_with_auto_env(&server).await?;
+    let items = ["first bounded instruction", "second bounded instruction"]
+        .into_iter()
+        .map(|text| ContextualUserFragment::into(ContinuousPlanningFragment::new(text)))
+        .collect();
+    let submission = test
+        .codex
+        .start_or_steer_turn(TurnInputRequest::new(TurnInput::ContextualItems {
+            items,
+            presentation: None,
+        }))
+        .await?;
+    assert!(matches!(submission, TurnInputSubmission::Started { .. }));
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    let request = response.single_request();
+    let fragments = request
+        .input()
+        .iter()
+        .filter(|item| item["role"] == "user")
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .filter_map(|item| item["text"].as_str())
+        .filter(|text| text.starts_with("<continuous_planning_context>"))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fragments,
+        vec![
+            "<continuous_planning_context>first bounded instruction</continuous_planning_context>",
+            "<continuous_planning_context>second bounded instruction</continuous_planning_context>",
+        ]
+    );
+    Ok(())
+}

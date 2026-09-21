@@ -331,6 +331,20 @@ fn searchable_text(item: &ThreadItem) -> Option<Cow<'_, str>> {
             let text = markdown_to_search_text(text);
             (!text.is_empty()).then_some(Cow::Owned(text))
         }
+        ThreadItem::ContinuousPlanningMessages(batch) => {
+            let text = batch
+                .messages
+                .iter()
+                .filter(|message| {
+                    message.recipient == batch.audience
+                        || message.recipient
+                            == codex_app_server_protocol::MessageRecipient::Supervisor
+                })
+                .map(|message| markdown_to_search_text(&message.text))
+                .collect::<Vec<_>>()
+                .join(" ");
+            (!text.is_empty()).then_some(Cow::Owned(text))
+        }
         ThreadItem::HookPrompt { .. }
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Plan { .. }

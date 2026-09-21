@@ -3613,9 +3613,15 @@ impl ThreadRequestProcessor {
         let mut raw_events_enabled = false;
         if let Ok(thread) = self.thread_manager.get_thread(thread_id).await {
             let config_snapshot = thread.config_snapshot().await;
-            self.thread_watch_manager
-                .upsert_thread(&thread_id.to_string())
-                .await;
+            if thread
+                .thread_extension_data()
+                .get::<codex_supervisor_extension::ImplementerBinding>()
+                .is_none()
+            {
+                self.thread_watch_manager
+                    .upsert_thread(&thread_id.to_string())
+                    .await;
+            }
             if let Some(parent_thread_id) = config_snapshot.parent_thread_id {
                 raw_events_enabled = self
                     .thread_state_manager
@@ -4203,6 +4209,15 @@ impl ThreadRequestProcessor {
                 self.thread_goal_processor
                     .emit_resume_goal_snapshot(thread_id)
                     .await;
+                if let Some(db) = &self.state_db {
+                    crate::plan_updates::send_plan_snapshot(
+                        &self.outgoing,
+                        connection_id,
+                        thread_id,
+                        db,
+                    )
+                    .await;
+                }
                 codex_thread
                     .emit_thread_idle_lifecycle_if_idle(ThreadIdleCause::Completed)
                     .await;

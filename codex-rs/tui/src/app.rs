@@ -210,6 +210,7 @@ mod agents_overview_actions;
 mod agents_overview_details;
 mod agents_overview_threads;
 mod agents_overview_view;
+mod supervisor;
 pub(crate) use agents_overview::AGENTS_OVERVIEW_VIEW_ID;
 mod app_server_event_targets;
 mod app_server_events;

@@ -678,7 +678,10 @@ mod tests {
         let reloader = Arc::new(StaticReloader {
             state: state.clone(),
         });
-        NetworkProxyState::with_reloader_and_audit_metadata(state, reloader, metadata)
+        let mut state =
+            NetworkProxyState::with_reloader_and_audit_metadata(state, reloader, metadata);
+        state.dns_answers = crate::test_support::public_dns_answers();
+        state
     }
 
     fn is_rfc3339_utc_millis(timestamp: &str) -> bool {

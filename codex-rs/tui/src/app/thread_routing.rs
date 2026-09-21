@@ -229,8 +229,22 @@ impl App {
         let label = self
             .agent_navigation
             .active_agent_label(self.current_displayed_thread_id(), self.primary_thread_id);
+        let role = self
+            .current_displayed_thread_id()
+            .and_then(|thread_id| self.agent_navigation.get(&thread_id))
+            .and_then(|entry| entry.agent_role.as_deref());
+        let role = role.map(str::to_owned);
+        let label = label.map(|label| {
+            if self.config.features.enabled(Feature::ContinuousPlanning) {
+                format!("{label} · Shift+Tab to switch")
+            } else {
+                label
+            }
+        });
         self.chat_widget.set_active_agent_label(label);
         self.sync_side_thread_ui();
+        self.chat_widget
+            .set_supervisor_conversation_role(role.as_deref());
     }
 
     pub(super) async fn thread_cwd(&self, thread_id: ThreadId) -> Option<AbsolutePathBuf> {
@@ -664,6 +678,12 @@ impl App {
     ) -> Result<bool> {
         match op {
             AppCommand::Interrupt => {
+                if self.chat_widget.supervisor_enabled()
+                    && self.chat_widget.thread_id() == Some(thread_id)
+                {
+                    app_server.supervisor_interrupt(thread_id).await?;
+                    return Ok(true);
+                }
                 let mut turn_id = self
                     .active_turn_id_for_thread(thread_id)
                     .await
@@ -1134,9 +1154,15 @@ impl App {
         thread_id: ThreadId,
         notification: ServerNotification,
     ) -> Result<()> {
-        if self.abandoned_side_threads.contains(&thread_id) {
+        if self.abandoned_side_threads.contains(&thread_id)
+            || matches!(
+                &notification,
+                ServerNotification::ThreadSupervisorActivity(_)
+            )
+        {
             return Ok(());
         }
+        self.cache_supervisor_conversations(&notification);
         if self.current_displayed_thread_id() == Some(thread_id)
             && let ServerNotification::TurnCompleted(notification) = &notification
         {
@@ -1837,7 +1863,7 @@ impl App {
                 preserve_in_flight_turn: true,
             },
         );
-        if !snapshot.turns.is_empty() {
+        if !snapshot.turns.is_empty() || self.chat_widget.supervisor_enabled() {
             self.chat_widget
                 .replay_thread_turns(snapshot.turns, ReplayKind::ThreadSnapshot);
         }

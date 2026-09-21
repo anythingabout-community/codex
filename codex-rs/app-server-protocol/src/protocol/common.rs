@@ -613,6 +613,33 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadSetNameResponse,
     },
+    ThreadSupervisorRead => "thread/supervisor/read" {
+        params: v2::ThreadSupervisorReadParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadSupervisorReadResponse,
+    },
+    ThreadSupervisorHistoryList => "thread/supervisor/history/list" {
+        params: v2::ThreadSupervisorHistoryListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadSupervisorHistoryListResponse,
+    },
+    ThreadSupervisorInterrupt => "thread/supervisor/interrupt" {
+        params: v2::ThreadSupervisorInterruptParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadSupervisorInterruptResponse,
+    },
+    #[experimental("thread/plan/read")]
+    ThreadPlanRead => "thread/plan/read" {
+        params: v2::ThreadPlanReadParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadPlanReadResponse,
+    },
+    #[experimental("thread/plan/history/list")]
+    ThreadPlanHistoryList => "thread/plan/history/list" {
+        params: v2::ThreadPlanHistoryListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadPlanHistoryListResponse,
+    },
     ThreadGoalSet => "thread/goal/set" {
         params: v2::ThreadGoalSetParams,
         serialization: thread_id(params.thread_id),
@@ -1917,6 +1944,9 @@ server_notification_definitions! {
     SkillsChanged => "skills/changed" (v2::SkillsChangedNotification),
     ThreadNameUpdated => "thread/name/updated" (v2::ThreadNameUpdatedNotification),
     ThreadAttachmentUpdated => "thread/attachment/updated" (v2::ThreadAttachmentUpdatedNotification),
+    ThreadSupervisorUpdated => "thread/supervisor/updated" (v2::ThreadSupervisorUpdatedNotification),
+    ThreadSupervisorActivity => "thread/supervisor/activity" (v2::ThreadSupervisorActivityNotification),
+    ThreadPlanUpdated => "thread/plan/updated" (v2::ThreadPlanUpdatedNotification),
     ThreadGoalUpdated => "thread/goal/updated" (v2::ThreadGoalUpdatedNotification),
     ThreadGoalCleared => "thread/goal/cleared" (v2::ThreadGoalClearedNotification),
     #[experimental("thread/queue/changed")]

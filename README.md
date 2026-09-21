@@ -71,6 +71,38 @@ Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your 
 
 You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
 
+## Development environment
+
+On macOS or Linux (including WSL), install [Nix](https://nixos.org/download/),
+[devenv](https://devenv.sh/getting-started/), and [direnv](https://direnv.net/docs/installation.html).
+Enable the [direnv shell hook](https://direnv.net/docs/hook.html) once; for Zsh, add
+`eval "$(direnv hook zsh)"` to `~/.zshrc` and restart your shell.
+
+From the repository root, run:
+
+```shell
+direnv allow
+```
+
+Direnv loads the development environment when you enter the repository. You can
+also enter it manually with `devenv shell`. The Rust toolchain and components come
+from `codex-rs/rust-toolchain.toml`; Nix dependencies are pinned in `devenv.lock`.
+The environment includes the native build dependencies, `just`, Nextest, Insta,
+Python, uv, DotSlash, Bazelisk, Node.js, and Corepack. Corepack selects the pnpm
+version from `package.json`.
+
+```shell
+cd codex-rs
+cargo build
+just test -p codex-utils-string
+just fmt
+```
+
+Use `pnpm install --frozen-lockfile` from the repository root when working on the
+JavaScript packages. After updating `rust-toolchain.toml`, Direnv reloads the
+environment automatically. Run `devenv update` to refresh Nix dependency pins and
+commit the resulting `devenv.lock` changes.
+
 ## Docs
 
 - [**Codex Documentation**](https://developers.openai.com/codex)

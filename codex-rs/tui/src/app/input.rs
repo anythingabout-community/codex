@@ -283,6 +283,30 @@ impl App {
                 return;
             }
         }
+        if self.config.features.enabled(Feature::ContinuousPlanning)
+            && self.overlay.is_none()
+            && self.chat_widget.no_modal_or_popup_active()
+            && (crate::key_hint::shift(KeyCode::Tab).is_press(key_event)
+                || matches!(
+                    key_event,
+                    KeyEvent {
+                        code: KeyCode::BackTab,
+                        modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                        kind: KeyEventKind::Press,
+                        ..
+                    }
+                ))
+        {
+            if let Some(thread_id) = self
+                .adjacent_thread_id_with_backfill(app_server, AgentNavigationDirection::Next)
+                .await
+            {
+                let _ = self
+                    .select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                    .await;
+            }
+            return;
+        }
         // Some terminals, especially on macOS, encode Option+Left/Right as Option+b/f unless
         // enhanced keyboard reporting is available. We only treat those word-motion fallbacks as
         // agent-switch shortcuts when the composer is empty so we never steal the expected

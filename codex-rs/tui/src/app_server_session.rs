@@ -374,6 +374,9 @@ pub(crate) fn source_agent_path(source: &SessionSource) -> Option<String> {
 
 /// Uses the server capability when available and preserves compatibility with older servers.
 pub(crate) fn thread_blocks_direct_input(thread: &Thread) -> bool {
+    if thread.agent_role.as_deref() == Some("implementer") {
+        return true;
+    }
     thread
         .can_accept_direct_input
         .map(|can_accept| !can_accept)
@@ -1364,6 +1367,23 @@ impl AppServerSession {
             })
             .await
             .wrap_err("turn/start failed in TUI")
+    }
+
+    pub(crate) async fn supervisor_interrupt(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> std::result::Result<(), TypedRequestError> {
+        let request_id = self.next_request_id();
+        let _: codex_app_server_protocol::ThreadSupervisorInterruptResponse = self
+            .client
+            .request_typed(ClientRequest::ThreadSupervisorInterrupt {
+                request_id,
+                params: codex_app_server_protocol::ThreadSupervisorInterruptParams {
+                    thread_id: thread_id.to_string(),
+                },
+            })
+            .await?;
+        Ok(())
     }
 
     pub(crate) async fn turn_interrupt(

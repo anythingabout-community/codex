@@ -236,7 +236,9 @@ impl App {
         mut threads: Vec<Thread>,
         selected_thread_id: Option<ThreadId>,
     ) -> AgentsOverviewView {
-        threads.retain(|thread| !thread.ephemeral);
+        threads.retain(|thread| {
+            !thread.ephemeral && thread.agent_role.as_deref() != Some("implementer")
+        });
         for thread in &mut threads {
             if thread.parent_thread_id.is_none()
                 && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {

@@ -27,6 +27,7 @@ pub enum TurnInput {
         acceptance_order: Option<u64>,
     },
     FunctionCallOutput(ResponseItem),
+    Presentation(codex_extension_items::ExtensionItem),
     // Preserve the existing serialized format while carrying injection API metadata
     // through the in-memory queue.
     ResponseItem(#[serde(with = "turn_input_response_item")] ResponseItemEnvelope),

@@ -14,6 +14,10 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.bottom_pane.handle_plan_key(key_event) {
+            self.request_redraw();
+            return;
+        }
         if self.handle_question_key(key_event) {
             return;
         }
@@ -658,7 +662,9 @@ impl ChatWidget {
 
     // Review mode counts as cancellable work so Ctrl+C interrupts instead of quitting.
     fn is_cancellable_work_active(&self) -> bool {
-        self.bottom_pane.is_task_running() || self.review.is_review_mode
+        self.bottom_pane.is_task_running()
+            || self.bottom_pane.has_active_timed_plan()
+            || self.review.is_review_mode
     }
 
     pub(crate) fn is_agent_turn_running(&self) -> bool {

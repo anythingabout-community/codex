@@ -381,10 +381,12 @@ SET
             WHERE thread_id = ?
               AND turn_id = ?
               AND (
-                item_type = 'agentMessage'
-                OR (item_type = '' AND json_extract(item_json, '$.type') = 'agentMessage')
+                ((item_type = 'agentMessage'
+                    OR (item_type = '' AND json_extract(item_json, '$.type') = 'agentMessage'))
+                    AND json_extract(item_json, '$.phase') = 'final_answer')
+                OR (json_extract(item_json, '$.type') = 'continuousPlanningMessages'
+                    AND json_extract(item_json, '$.finalAnswer') = 1)
               )
-              AND json_extract(item_json, '$.phase') = 'final_answer'
             ORDER BY rollout_ordinal DESC
             LIMIT 1
         ),
@@ -495,7 +497,11 @@ WHERE thread_id = ?
             ThreadItem::AgentMessage {
                 phase: Some(MessagePhase::FinalAnswer),
                 ..
-            } => {
+            }
+            | ThreadItem::ContinuousPlanningMessages(codex_app_server_protocol::MessageBatch {
+                final_answer: true,
+                ..
+            }) => {
                 sqlx::query(
                     r#"
 UPDATE thread_turns
@@ -517,6 +523,7 @@ WHERE thread_id = ?
                 phase: Some(MessagePhase::Commentary) | None,
                 ..
             }
+            | ThreadItem::ContinuousPlanningMessages(_)
             | ThreadItem::HookPrompt { .. }
             | ThreadItem::FunctionCallOutput { .. }
             | ThreadItem::Plan { .. }

@@ -126,6 +126,7 @@ mod models_refresh_worker;
 mod notification_media;
 mod otel_reloader;
 mod outgoing_message;
+mod plan_updates;
 mod plugin_config_reload;
 mod request_processors;
 mod request_serialization;

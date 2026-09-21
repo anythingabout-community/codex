@@ -853,7 +853,8 @@ fn turn_user_input(input: &[TurnInput]) -> Vec<UserInput> {
         .iter()
         .filter_map(|item| match item {
             TurnInput::UserInput { content, .. } => Some(content.as_slice()),
-            TurnInput::ResponseItem(_)
+            TurnInput::Presentation(_)
+            | TurnInput::ResponseItem(_)
             | TurnInput::FunctionCallOutput(_)
             | TurnInput::InterAgentCommunication(_) => None,
         })
@@ -1187,7 +1188,8 @@ async fn track_turn_resolved_config_analytics(
                 .iter()
                 .filter_map(|item| match item {
                     TurnInput::UserInput { content, .. } => Some(content.as_slice()),
-                    TurnInput::ResponseItem(_)
+                    TurnInput::Presentation(_)
+                    | TurnInput::ResponseItem(_)
                     | TurnInput::FunctionCallOutput(_)
                     | TurnInput::InterAgentCommunication(_) => None,
                 })
@@ -2478,8 +2480,16 @@ async fn try_run_sampling_request(
     let plan_mode = turn_context.mode() == ModeKind::Plan;
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
-    let defer_streamed_turn_items_for_contributors =
-        !sess.services.extensions.turn_item_contributors().is_empty();
+    let output_contributors: Vec<_> = sess
+        .services
+        .extensions
+        .turn_item_contributors()
+        .iter()
+        .filter(|contributor| contributor.enabled_for(&sess.services.thread_extension_data))
+        .collect();
+    let defer_streamed_turn_items_for_contributors = !output_contributors.is_empty();
+    let mut message_validators: Vec<Box<dyn codex_extension_api::MessageStreamValidator>> =
+        Vec::new();
     let mut active_item_is_streaming_to_client = false;
     let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<SamplingRequestResult> = loop {
@@ -2646,6 +2656,12 @@ async fn try_run_sampling_request(
                 }
             }
             ResponseEvent::OutputItemAdded(mut item) => {
+                message_validators = output_contributors
+                    .iter()
+                    .filter_map(|contributor| {
+                        contributor.message_validator(&sess.services.thread_extension_data)
+                    })
+                    .collect();
                 assign_missing_streamed_response_item_id(&mut item, /*active_item*/ None);
                 if let ResponseItem::CustomToolCall {
                     call_id,
@@ -2825,6 +2841,12 @@ async fn try_run_sampling_request(
                 });
             }
             ResponseEvent::OutputTextDelta(delta) => {
+                if let Err(error) = message_validators
+                    .iter_mut()
+                    .try_for_each(|validator| validator.push(&delta))
+                {
+                    break Err(CodexErr::InvalidRequest(error));
+                }
                 // In review child threads, suppress assistant text deltas; the
                 // UI will show a selection popup from the final ReviewOutput.
                 if let Some(active) = active_item.as_ref() {

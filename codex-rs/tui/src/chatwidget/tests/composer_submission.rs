@@ -1,6 +1,7 @@
 use super::*;
 use crate::app_event::ConnectorsSnapshot;
 use crate::history_cell::ThreadRecapLoadingCell;
+use codex_protocol::continuous_planning::*;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
@@ -1685,6 +1686,53 @@ async fn output_free_ctrl_c_interrupt_keeps_prompt_and_opens_blank_composer() {
             chat.bottom_pane.composer_text()
         )
     );
+}
+
+#[tokio::test]
+async fn continuous_planning_can_interrupt_a_replacement_while_the_coordinator_is_idle() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let plan = ContinuousPlanning {
+        id: "task".to_string(),
+        version: 1,
+        objective: "Verify".to_string(),
+        acceptance: "Tests pass".to_string(),
+        stages: vec![],
+        steps: vec![TimedPlanStep {
+            definition: PlanStepDefinition {
+                id: "a".to_string(),
+                stage_id: "s1".to_string(),
+                title: "Verify".to_string(),
+                acceptance: "Tests pass".to_string(),
+                dependencies: vec![],
+                estimate_seconds: 60,
+            },
+            state: PlanStepState::Running,
+            owner: "replacement".to_string(),
+            initial_estimate_seconds: 60,
+            elapsed_seconds: 0,
+            started_at: Some(1000),
+            running_since: Some(1000),
+            submitted_at: None,
+            completed_at: None,
+            evidence: vec![],
+        }],
+        review: PlanReviewState::Idle,
+        updated_at: 1000,
+        next_review_at: 1060,
+        estimated_completion_at: 1060,
+        reason: "Assigned".to_string(),
+    };
+    chat.bottom_pane
+        .update_timed_plan(plan, "coordinator".to_string(), 1000);
+    assert!(!chat.bottom_pane.is_task_running());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::CodexOp(Op::Interrupt)))
+    );
+    chat.on_ctrl_c();
+    next_interrupt_op(&mut op_rx);
 }
 
 #[tokio::test]

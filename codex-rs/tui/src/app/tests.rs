@@ -3611,15 +3611,17 @@ async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disable
 #[tokio::test]
 async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000002").expect("valid thread");
 
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
+    app.primary_thread_id = Some(implementer_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
+    app.thread_event_channels.insert(
+        implementer_thread_id,
+        ThreadEventChannel::new(/*capacity*/ 1),
+    );
 
     let agent_channel = ThreadEventChannel::new(/*capacity*/ 1);
     {
@@ -3654,15 +3656,17 @@ async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
 #[tokio::test]
 async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
 
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
+    app.primary_thread_id = Some(implementer_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
+    app.thread_event_channels.insert(
+        implementer_thread_id,
+        ThreadEventChannel::new(/*capacity*/ 1),
+    );
     app.thread_event_channels.insert(
         agent_thread_id,
         ThreadEventChannel::new_with_session(
@@ -3813,7 +3817,7 @@ async fn replay_snapshot_with_pending_request_suppresses_replay_notices() {
 #[tokio::test]
 async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
     let side_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
@@ -3822,10 +3826,10 @@ async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> 
     let quiet_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000044").expect("valid thread");
 
-    app.primary_thread_id = Some(main_thread_id);
+    app.primary_thread_id = Some(implementer_thread_id);
     app.active_thread_id = Some(side_thread_id);
     app.side_threads
-        .insert(side_thread_id, SideThreadState::new(main_thread_id));
+        .insert(side_thread_id, SideThreadState::new(implementer_thread_id));
     app.thread_event_channels.insert(
         agent_thread_id,
         ThreadEventChannel::new_with_session(
@@ -3877,7 +3881,7 @@ async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> 
     );
 
     app.side_threads.remove(&side_thread_id);
-    app.active_thread_id = Some(main_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
     assert_eq!(
         app.pending_inactive_thread_requests().await,
         vec![(agent_thread_id, pending_approval)]
@@ -4329,15 +4333,17 @@ async fn inactive_thread_invalid_url_elicitation_is_declined() {
 #[tokio::test]
 async fn inactive_thread_approval_badge_clears_after_turn_completion_notification() -> Result<()> {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
 
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
+    app.primary_thread_id = Some(implementer_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
+    app.thread_event_channels.insert(
+        implementer_thread_id,
+        ThreadEventChannel::new(/*capacity*/ 1),
+    );
     app.thread_event_channels.insert(
         agent_thread_id,
         ThreadEventChannel::new_with_session(
@@ -4391,7 +4397,7 @@ async fn inactive_thread_approval_badge_clears_after_turn_completion_notificatio
 async fn inactive_thread_started_notification_initializes_replay_session() -> Result<()> {
     let mut app = make_test_app().await;
     let temp_dir = tempdir()?;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
@@ -4401,14 +4407,14 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
         approval_policy: AskForApproval::OnRequest,
         permission_profile: PermissionProfile::workspace_write(),
         runtime_workspace_roots: vec![primary_cwd.clone(), shared_root.clone()],
-        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
+        ..test_thread_session(implementer_thread_id, primary_cwd.to_path_buf())
     };
 
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
+    app.primary_thread_id = Some(implementer_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
     app.primary_session_configured = Some(primary_session.clone());
     app.thread_event_channels.insert(
-        main_thread_id,
+        implementer_thread_id,
         ThreadEventChannel::new_with_session(
             /*capacity*/ 4,
             primary_session.clone(),
@@ -4497,7 +4503,7 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
 async fn inactive_thread_started_notification_preserves_primary_model_when_path_missing()
 -> Result<()> {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000301").expect("valid thread");
     let agent_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000302").expect("valid thread");
@@ -4506,14 +4512,14 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
         approval_policy: AskForApproval::OnRequest,
         permission_profile: PermissionProfile::workspace_write(),
         runtime_workspace_roots: vec![primary_cwd.clone()],
-        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
+        ..test_thread_session(implementer_thread_id, primary_cwd.to_path_buf())
     };
 
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
+    app.primary_thread_id = Some(implementer_thread_id);
+    app.active_thread_id = Some(implementer_thread_id);
     app.primary_session_configured = Some(primary_session.clone());
     app.thread_event_channels.insert(
-        main_thread_id,
+        implementer_thread_id,
         ThreadEventChannel::new_with_session(
             /*capacity*/ 4,
             primary_session.clone(),
@@ -4582,7 +4588,7 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
 #[tokio::test]
 async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
     let mut app = make_test_app().await;
-    let main_thread_id =
+    let implementer_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000401").expect("valid thread");
     let read_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
@@ -4591,7 +4597,7 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
         approval_policy: AskForApproval::OnRequest,
         permission_profile: PermissionProfile::workspace_write(),
         runtime_workspace_roots: vec![primary_cwd.clone()],
-        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
+        ..test_thread_session(implementer_thread_id, primary_cwd.to_path_buf())
     };
     app.primary_session_configured = Some(primary_session);
 

@@ -1070,6 +1070,7 @@ async fn execute_inner(
                                     | ThreadItem::FunctionCallOutput { .. }
                                     | ThreadItem::HookPrompt { .. }
                                     | ThreadItem::AgentMessage { .. }
+                                    | ThreadItem::ContinuousPlanningMessages(_)
                                     | ThreadItem::Plan { .. }
                                     | ThreadItem::Reasoning { .. }
                                     | ThreadItem::SubAgentActivity { .. }
@@ -1496,6 +1497,11 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
             }),
             ThreadItem::ImageView { id, path } => json!({
                 "type": "imageView", "id": id, "path": path
+            }),
+            ThreadItem::ContinuousPlanningMessages(batch) => json!({
+                "type": "continuousPlanningMessages", "id": batch.id,
+                "messages": batch.messages.iter().filter(|message| message.recipient != codex_app_server_protocol::MessageRecipient::Implementer)
+                    .map(|message| json!({"id":message.id,"recipient":message.recipient,"text":truncate(&message.text, DEFAULT_OUTPUT_CHARS)})).collect::<Vec<_>>()
             }),
             ThreadItem::Sleep(item) => json!({
                 "type": "sleep", "id": item.id, "durationMs": item.duration_ms

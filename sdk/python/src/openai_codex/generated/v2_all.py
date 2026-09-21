@@ -2688,6 +2688,12 @@ class MessagePhase(Enum):
     final_answer = "final_answer"
 
 
+class MessageRecipient(Enum):
+    user = "user"
+    supervisor = "supervisor"
+    implementer = "implementer"
+
+
 class MisalignmentSteer(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -3034,6 +3040,45 @@ class PlanDeltaNotification(BaseModel):
     item_id: Annotated[str, Field(alias="itemId")]
     thread_id: Annotated[str, Field(alias="threadId")]
     turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class PlanReviewState(Enum):
+    idle = "idle"
+    due = "due"
+    running = "running"
+    unavailable = "unavailable"
+
+
+class PlanStage(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    acceptance: str
+    assumptions: list[str]
+    estimate_seconds: Annotated[int, Field(alias="estimateSeconds")]
+    id: str
+    title: str
+
+
+class PlanStepDefinition(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    acceptance: str
+    dependencies: list[str]
+    estimate_seconds: Annotated[int, Field(alias="estimateSeconds")]
+    id: str
+    stage_id: Annotated[str, Field(alias="stageId")]
+    title: str
+
+
+class PlanStepState(Enum):
+    pending = "pending"
+    running = "running"
+    reviewing = "reviewing"
+    completed = "completed"
+    blocked = "blocked"
+    cancelled = "cancelled"
 
 
 class PlanType(str, Enum):
@@ -4943,6 +4988,92 @@ class SubagentMigration(BaseModel):
     name: str
 
 
+class Data2(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    delta: str
+    item_id: Annotated[str, Field(alias="itemId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class CommandOutputSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Data2
+    type: Annotated[Literal["commandOutput"], Field(title="CommandOutputSupervisorActivityType")]
+
+
+class FileOutputSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Annotated[
+        Data2,
+        Field(
+            description="Deprecated legacy notification for `apply_patch` textual output.\n\nThe server no longer emits this notification."
+        ),
+    ]
+    type: Annotated[Literal["fileOutput"], Field(title="FileOutputSupervisorActivityType")]
+
+
+class Data4(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    item_id: Annotated[str, Field(alias="itemId")]
+    process_id: Annotated[str, Field(alias="processId")]
+    stdin: str
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class TerminalInteractionSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Data4
+    type: Annotated[
+        Literal["terminalInteraction"], Field(title="TerminalInteractionSupervisorActivityType")
+    ]
+
+
+class Data5(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    item_id: Annotated[str, Field(alias="itemId")]
+    message: str
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class McpProgressSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Data5
+    type: Annotated[Literal["mcpProgress"], Field(title="McpProgressSupervisorActivityType")]
+
+
+class SupervisorState(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    activity_sequence: Annotated[int, Field(alias="activitySequence")]
+    execution_id: Annotated[str | None, Field(alias="executionId")] = None
+    implementer_thread_id: Annotated[str | None, Field(alias="implementerThreadId")] = None
+    paused: bool
+    revision: int | None = 0
+    step_id: Annotated[str | None, Field(alias="stepId")] = None
+    token_budget: Annotated[int | None, Field(alias="tokenBudget")] = None
+    total_tokens: Annotated[int, Field(alias="totalTokens")]
+    updated_at: Annotated[int, Field(alias="updatedAt")]
+
+
 class TerminalInteractionNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6076,6 +6207,36 @@ class ThreadStatusChangedNotification(BaseModel):
     thread_id: Annotated[str, Field(alias="threadId")]
 
 
+class ThreadSupervisorHistoryListParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cursor: str | None = None
+    limit: Annotated[int | None, Field(ge=0)] = None
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadSupervisorInterruptParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadSupervisorInterruptResponse(BaseModel):
+    pass
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class ThreadSupervisorReadParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
 class TurnStartedThreadTimelineEntry(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6126,6 +6287,22 @@ class ThreadUsageBreakdownGroup(BaseModel):
     reasoning_effort: Annotated[str | None, Field(alias="reasoningEffort")] = None
     speed: str | None = None
     total_tokens: Annotated[int | None, Field(alias="totalTokens")] = None
+
+
+class TimedPlanStep(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    completed_at: Annotated[int | None, Field(alias="completedAt")] = None
+    definition: PlanStepDefinition
+    elapsed_seconds: Annotated[int, Field(alias="elapsedSeconds")]
+    evidence: list[str]
+    initial_estimate_seconds: Annotated[int, Field(alias="initialEstimateSeconds")]
+    owner: str
+    running_since: Annotated[int | None, Field(alias="runningSince")] = None
+    started_at: Annotated[int | None, Field(alias="startedAt")] = None
+    state: PlanStepState
+    submitted_at: Annotated[int | None, Field(alias="submittedAt")] = None
 
 
 class TokenUsageBreakdown(BaseModel):
@@ -6690,6 +6867,41 @@ class ThreadNameSetRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/name/set"], Field(title="Thread/name/setRequestMethod")]
     params: ThreadSetNameParams
+
+
+class ThreadSupervisorReadRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/supervisor/read"], Field(title="Thread/supervisor/readRequestMethod")
+    ]
+    params: ThreadSupervisorReadParams
+
+
+class ThreadSupervisorHistoryListRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/supervisor/history/list"],
+        Field(title="Thread/supervisor/history/listRequestMethod"),
+    ]
+    params: ThreadSupervisorHistoryListParams
+
+
+class ThreadSupervisorInterruptRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/supervisor/interrupt"],
+        Field(title="Thread/supervisor/interruptRequestMethod"),
+    ]
+    params: ThreadSupervisorInterruptParams
 
 
 class ThreadGoalGetRequest(BaseModel):
@@ -7799,6 +8011,37 @@ class ContentItem(
     root: (
         InputTextContentItem | InputImageContentItem | InputAudioContentItem | OutputTextContentItem
     )
+
+
+class ContinuousPlanning(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    acceptance: str
+    estimated_completion_at: Annotated[int, Field(alias="estimatedCompletionAt")]
+    id: Annotated[
+        str,
+        Field(
+            description="Host-assigned identity, retained across revisions and changed for a new task."
+        ),
+    ]
+    next_review_at: Annotated[int, Field(alias="nextReviewAt")]
+    objective: str
+    reason: str
+    review: PlanReviewState
+    stages: list[PlanStage]
+    steps: list[TimedPlanStep]
+    updated_at: Annotated[int, Field(alias="updatedAt")]
+    version: int
+
+
+class DirectedMessage(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: str
+    recipient: MessageRecipient
+    text: str
 
 
 class ExperimentalFeature(BaseModel):
@@ -9508,6 +9751,29 @@ class ThreadGoalUpdatedNotification(BaseModel):
     turn_id: Annotated[str | None, Field(alias="turnId")] = None
 
 
+class ContinuousPlanningMessagesThreadItem(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    audience: Annotated[
+        MessageRecipient,
+        Field(description="Conversation in which this host-generated projection is presented."),
+    ]
+    final_answer: Annotated[bool, Field(alias="finalAnswer")]
+    id: Annotated[
+        str,
+        Field(
+            description="The source assistant message ID; block IDs append their one-based index."
+        ),
+    ]
+    messages: list[DirectedMessage]
+    sender: MessageRecipient
+    type: Annotated[
+        Literal["continuousPlanningMessages"],
+        Field(title="ContinuousPlanningMessagesThreadItemType"),
+    ]
+
+
 class UserMessageThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -9738,6 +10004,21 @@ class ThreadListParams(BaseModel):
     ] = None
 
 
+class ThreadPlanUpdatedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    observed_at: Annotated[
+        int,
+        Field(
+            alias="observedAt",
+            description="Server clock when this view was sent, including snapshots on resume.",
+        ),
+    ]
+    plan: ContinuousPlanning
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
 class TranscriptSegmentThreadRealtimeItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -9928,6 +10209,24 @@ class ThreadStartParams(BaseModel):
             description="Optional client-supplied analytics source classification for this thread.",
         ),
     ] = None
+
+
+class ThreadSupervisorReadResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    plan: ContinuousPlanning | None = None
+    state: SupervisorState | None = None
+
+
+class ThreadSupervisorUpdatedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    observed_at: Annotated[int, Field(alias="observedAt")]
+    plan: ContinuousPlanning | None = None
+    state: SupervisorState
+    thread_id: Annotated[str, Field(alias="threadId")]
 
 
 class RealtimeThreadTimelineEntry(BaseModel):
@@ -10769,6 +11068,41 @@ class ErrorServerNotification(BaseModel):
     params: ErrorNotification
 
 
+class ThreadSupervisorUpdatedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/supervisor/updated"],
+        Field(title="Thread/supervisor/updatedNotificationMethod"),
+    ]
+    params: ThreadSupervisorUpdatedNotification
+
+
+class ThreadPlanUpdatedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/plan/updated"], Field(title="Thread/plan/updatedNotificationMethod")
+    ]
+    params: ThreadPlanUpdatedNotification
+
+
 class ThreadGoalUpdatedServerNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -11024,7 +11358,8 @@ class FunctionCallOutputThreadItem(BaseModel):
 
 class ThreadItem(
     RootModel[
-        UserMessageThreadItem
+        ContinuousPlanningMessagesThreadItem
+        | UserMessageThreadItem
         | HookPromptThreadItem
         | AgentMessageThreadItem
         | FunctionCallOutputThreadItem
@@ -11049,7 +11384,8 @@ class ThreadItem(
         populate_by_name=True,
     )
     root: (
-        UserMessageThreadItem
+        ContinuousPlanningMessagesThreadItem
+        | UserMessageThreadItem
         | HookPromptThreadItem
         | AgentMessageThreadItem
         | FunctionCallOutputThreadItem
@@ -11579,6 +11915,80 @@ class ItemCompletedServerNotification(BaseModel):
     params: ItemCompletedNotification
 
 
+class Data(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    item: ThreadItem
+    started_at_ms: Annotated[
+        int,
+        Field(
+            alias="startedAtMs",
+            description="Unix timestamp (in milliseconds) when this item lifecycle started.",
+        ),
+    ]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class ItemStartedSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Data
+    type: Annotated[Literal["itemStarted"], Field(title="ItemStartedSupervisorActivityType")]
+
+
+class Data1(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    completed_at_ms: Annotated[
+        int,
+        Field(
+            alias="completedAtMs",
+            description="Unix timestamp (in milliseconds) when this item lifecycle completed.",
+        ),
+    ]
+    item: ThreadItem
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class ItemCompletedSupervisorActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: Data1
+    type: Annotated[Literal["itemCompleted"], Field(title="ItemCompletedSupervisorActivityType")]
+
+
+class SupervisorActivity(
+    RootModel[
+        ItemStartedSupervisorActivity
+        | ItemCompletedSupervisorActivity
+        | CommandOutputSupervisorActivity
+        | FileOutputSupervisorActivity
+        | TerminalInteractionSupervisorActivity
+        | McpProgressSupervisorActivity
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Annotated[
+        ItemStartedSupervisorActivity
+        | ItemCompletedSupervisorActivity
+        | CommandOutputSupervisorActivity
+        | FileOutputSupervisorActivity
+        | TerminalInteractionSupervisorActivity
+        | McpProgressSupervisorActivity,
+        Field(
+            description="Only native tool activity crosses this boundary, never Implementer dialogue."
+        ),
+    ]
+
+
 class Thread(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -11938,6 +12348,42 @@ class ThreadStartedNotification(BaseModel):
     thread: Thread
 
 
+class ThreadSupervisorActivityNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    activity: SupervisorActivity
+    created_at: Annotated[int, Field(alias="createdAt")]
+    execution_id: Annotated[str, Field(alias="executionId")]
+    implementer_thread_id: Annotated[str, Field(alias="implementerThreadId")]
+    sequence: int
+    step_id: Annotated[str, Field(alias="stepId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    title: str
+
+
+class Datum(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    activity: SupervisorActivity
+    created_at: Annotated[int, Field(alias="createdAt")]
+    execution_id: Annotated[str, Field(alias="executionId")]
+    implementer_thread_id: Annotated[str, Field(alias="implementerThreadId")]
+    sequence: int
+    step_id: Annotated[str, Field(alias="stepId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    title: str
+
+
+class ThreadSupervisorHistoryListResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    data: list[Datum]
+    next_cursor: Annotated[str | None, Field(alias="nextCursor")] = None
+
+
 class ThreadTurnsListResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -12087,6 +12533,9 @@ class ClientRequest(
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
         | ThreadNameSetRequest
+        | ThreadSupervisorReadRequest
+        | ThreadSupervisorHistoryListRequest
+        | ThreadSupervisorInterruptRequest
         | ThreadGoalSetRequest
         | ThreadGoalGetRequest
         | ThreadGoalClearRequest
@@ -12195,6 +12644,9 @@ class ClientRequest(
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
         | ThreadNameSetRequest
+        | ThreadSupervisorReadRequest
+        | ThreadSupervisorHistoryListRequest
+        | ThreadSupervisorInterruptRequest
         | ThreadGoalSetRequest
         | ThreadGoalGetRequest
         | ThreadGoalClearRequest
@@ -12428,6 +12880,24 @@ class ThreadStartedServerNotification(BaseModel):
     params: ThreadStartedNotification
 
 
+class ThreadSupervisorActivityServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/supervisor/activity"],
+        Field(title="Thread/supervisor/activityNotificationMethod"),
+    ]
+    params: ThreadSupervisorActivityNotification
+
+
 class ItemAutoApprovalReviewStartedServerNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -12477,6 +12947,9 @@ class ServerNotification(
         | SkillsChangedServerNotification
         | ThreadNameUpdatedServerNotification
         | ThreadAttachmentUpdatedServerNotification
+        | ThreadSupervisorUpdatedServerNotification
+        | ThreadSupervisorActivityServerNotification
+        | ThreadPlanUpdatedServerNotification
         | ThreadGoalUpdatedServerNotification
         | ThreadGoalClearedServerNotification
         | ThreadQueueChangedServerNotification
@@ -12565,6 +13038,9 @@ class ServerNotification(
         | SkillsChangedServerNotification
         | ThreadNameUpdatedServerNotification
         | ThreadAttachmentUpdatedServerNotification
+        | ThreadSupervisorUpdatedServerNotification
+        | ThreadSupervisorActivityServerNotification
+        | ThreadPlanUpdatedServerNotification
         | ThreadGoalUpdatedServerNotification
         | ThreadGoalClearedServerNotification
         | ThreadQueueChangedServerNotification

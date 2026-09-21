@@ -336,14 +336,23 @@ pub(super) async fn ensure_listener_task_running(
                     {
                         continue;
                     }
-                    let subscribed_connection_ids = thread_state_manager
-                        .subscribed_connection_ids(conversation_id)
+                    let main_binding = conversation.thread_extension_data().get::<codex_supervisor_extension::ImplementerBinding>();
+                    let audience = main_binding.as_ref().and_then(|binding| binding.supervisor_thread_id()).unwrap_or(conversation_id);
+                    let mut subscribed_connection_ids = thread_state_manager
+                        .subscribed_connection_ids(audience)
                         .await;
+                    if audience != conversation_id {
+                        for connection_id in thread_state_manager.subscribed_connection_ids(conversation_id).await {
+                            if !subscribed_connection_ids.contains(&connection_id) {
+                                subscribed_connection_ids.push(connection_id);
+                            }
+                        }
+                    }
                     let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
                         outgoing_for_task.clone(),
                         subscribed_connection_ids,
                         conversation_id,
-                    );
+                    ).with_supervisor(main_binding);
 
                     apply_bespoke_event_handling(
                         event.clone(),
@@ -552,13 +561,13 @@ pub(super) async fn handle_thread_listener_command(
             request_id,
             completion_tx,
         } => {
-            resolve_pending_server_request(
-                conversation_id,
-                thread_state_manager,
-                outgoing,
-                request_id,
-            )
-            .await;
+            let audience = conversation
+                .thread_extension_data()
+                .get::<codex_supervisor_extension::ImplementerBinding>()
+                .and_then(|binding| binding.supervisor_thread_id())
+                .unwrap_or(conversation_id);
+            resolve_pending_server_request(audience, thread_state_manager, outgoing, request_id)
+                .await;
             let _ = completion_tx.send(());
         }
     }
@@ -780,6 +789,10 @@ pub(super) async fn handle_pending_thread_resume_request(
             token_usage_turn_id,
         )
         .await;
+    }
+    if let Some(db) = conversation.state_db() {
+        crate::plan_updates::send_plan_snapshot(outgoing, connection_id, conversation_id, &db)
+            .await;
     }
     if pending.emit_thread_goal_update {
         if let Some(state_db) = pending.thread_goal_state_db {

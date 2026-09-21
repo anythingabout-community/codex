@@ -164,6 +164,7 @@ pub(crate) struct MessageProcessor {
     remote_control_processor: RemoteControlRequestProcessor,
     search_processor: SearchRequestProcessor,
     thread_goal_processor: ThreadGoalRequestProcessor,
+    thread_plan_processor: crate::request_processors::ThreadPlanRequestProcessor,
     thread_queue_processor: ThreadQueueRequestProcessor,
     thread_processor: ThreadRequestProcessor,
     turn_processor: TurnRequestProcessor,
@@ -344,6 +345,16 @@ impl MessageProcessor {
                         analytics_events_client: analytics_events_client.clone(),
                         thread_manager: thread_manager.clone(),
                         goal_service: Arc::clone(&goal_service),
+                        plan_update_sink: crate::plan_updates::plan_update_sink(
+                            outgoing.clone(),
+                            thread_state_manager.clone(),
+                            state_db.clone(),
+                        ),
+                        supervisor_update_sink: crate::plan_updates::supervisor_update_sink(
+                            outgoing.clone(),
+                            thread_state_manager.clone(),
+                            state_db.clone(),
+                        ),
                         environment_manager: Arc::clone(&environment_manager_for_extensions),
                         executor_skill_provider: Arc::clone(&executor_skill_provider),
                         git_attribution_base_url: config.chatgpt_base_url.clone(),
@@ -479,6 +490,10 @@ impl MessageProcessor {
         );
         let remote_control_processor = RemoteControlRequestProcessor::new(remote_control_handle);
         let search_processor = SearchRequestProcessor::new(outgoing.clone());
+        let thread_plan_processor = crate::request_processors::ThreadPlanRequestProcessor(
+            state_db.clone(),
+            thread_manager.clone(),
+        );
         let thread_goal_processor = ThreadGoalRequestProcessor::new(
             Arc::clone(&thread_manager),
             outgoing.clone(),
@@ -602,6 +617,7 @@ impl MessageProcessor {
             remote_control_processor,
             search_processor,
             thread_goal_processor,
+            thread_plan_processor,
             thread_queue_processor,
             thread_processor,
             turn_processor,
@@ -1337,6 +1353,23 @@ impl MessageProcessor {
                 self.thread_processor
                     .thread_set_name(request_id.clone(), params)
                     .await
+            }
+            ClientRequest::ThreadSupervisorRead { params, .. } => {
+                self.thread_plan_processor.supervisor_read(params).await
+            }
+            ClientRequest::ThreadSupervisorHistoryList { params, .. } => {
+                self.thread_plan_processor.supervisor_history(params).await
+            }
+            ClientRequest::ThreadSupervisorInterrupt { params, .. } => {
+                self.thread_plan_processor
+                    .supervisor_interrupt(params)
+                    .await
+            }
+            ClientRequest::ThreadPlanRead { params, .. } => {
+                self.thread_plan_processor.read(params).await
+            }
+            ClientRequest::ThreadPlanHistoryList { params, .. } => {
+                self.thread_plan_processor.history(params).await
             }
             ClientRequest::ThreadGoalSet { params, .. } => {
                 self.thread_goal_processor

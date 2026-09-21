@@ -849,12 +849,10 @@ fn selected_capability_fixture(
         "model_provider = \"mock_provider\"",
         "mcp_oauth_credentials_store = \"file\"\nmodel_provider = \"mock_provider\"",
         1,
-    );
+    ).replace("[features]\n", "[features]\napps = true\ndeferred_executor = true\nexecutor_capability_discovery = true\n");
     std::fs::write(
         config_path,
-        format!(
-            "{config}\n[features]\napps = true\ndeferred_executor = true\nexecutor_capability_discovery = true\n\n[skills]\ninclude_instructions = true\n"
-        ),
+        format!("{config}\n[skills]\ninclude_instructions = true\n"),
     )?;
     write_chatgpt_auth(
         codex_home.path(),

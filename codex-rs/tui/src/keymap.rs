@@ -89,6 +89,7 @@ pub(crate) struct RuntimeKeymap {
 pub(crate) struct AppKeymap {
     /// Open the daemon-wide agent-session overview.
     pub(crate) open_agents: Vec<KeyBinding>,
+    pub(crate) focus_plan: Vec<KeyBinding>,
     /// Open transcript overlay.
     pub(crate) open_transcript: Vec<KeyBinding>,
     /// Open external editor for the current draft.
@@ -636,6 +637,11 @@ impl RuntimeKeymap {
                 }));
 
         let app = AppKeymap {
+            focus_plan: resolve_bindings(
+                keymap.global.focus_plan.as_ref(),
+                &defaults.app.focus_plan,
+                "tui.keymap.global.focus_plan",
+            )?,
             open_agents: resolve_bindings(
                 keymap.global.open_agents.as_ref(),
                 &defaults.app.open_agents,
@@ -1339,6 +1345,7 @@ impl RuntimeKeymap {
         let list_accept = resolve_local!(keymap, defaults, list, accept);
         let list_cancel = resolve_local!(keymap, defaults, list, cancel);
         let configured_bindings_to_preserve = configured_bindings_to_preserve([
+            (keymap.global.focus_plan.as_ref(), app.focus_plan.as_slice()),
             (
                 keymap.global.open_agents.as_ref(),
                 app.open_agents.as_slice(),
@@ -1553,6 +1560,7 @@ impl RuntimeKeymap {
     fn built_in_defaults() -> Self {
         Self {
             app: AppKeymap {
+                focus_plan: default_bindings![plain(KeyCode::F(6))],
                 open_agents: default_bindings![],
                 open_transcript: default_bindings![ctrl(KeyCode::Char('t'))],
                 open_external_editor: default_bindings![ctrl(KeyCode::Char('g'))],
@@ -1906,6 +1914,7 @@ impl RuntimeKeymap {
 
         let main_bindings = [
             ("open_agents", self.app.open_agents.as_slice()),
+            ("focus_plan", self.app.focus_plan.as_slice()),
             ("open_transcript", self.app.open_transcript.as_slice()),
             (
                 "open_external_editor",
@@ -2008,6 +2017,7 @@ impl RuntimeKeymap {
             "app",
             [
                 ("open_agents", self.app.open_agents.as_slice()),
+                ("focus_plan", self.app.focus_plan.as_slice()),
                 ("open_transcript", self.app.open_transcript.as_slice()),
                 (
                     "open_external_editor",
@@ -2064,6 +2074,7 @@ impl RuntimeKeymap {
             "main",
             [
                 ("open_agents", self.app.open_agents.as_slice()),
+                ("focus_plan", self.app.focus_plan.as_slice()),
                 ("open_transcript", self.app.open_transcript.as_slice()),
                 (
                     "open_external_editor",

@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/supervisor_tests.rs
+expression: "render_bottom_popup(&implementer, 100)"
+---
+› Viewing Implementer · read only · Shift+Tab to switch conversations
+
+  gpt-5.6-sol default · /tmp/project

@@ -1431,13 +1431,10 @@ enable_socks5 = false
 
 fn insert_command_exec_config(codex_home: &Path, inserted_config: &str) -> Result<()> {
     let config_path = codex_home.join("config.toml");
-    let config = std::fs::read_to_string(&config_path)?;
-    let marker = "\n[model_providers.mock_provider]\n";
-    let (prefix, suffix) = config
-        .split_once(marker)
-        .context("test config should include mock provider table")?;
-    let config = format!("{prefix}\n{inserted_config}{marker}{suffix}");
-    std::fs::write(config_path, config)?;
+    let mut config = toml::from_str(&std::fs::read_to_string(&config_path)?)?;
+    let overlay = toml::from_str(inserted_config)?;
+    codex_config::merge_toml_values(&mut config, &overlay);
+    std::fs::write(config_path, toml::to_string(&config)?)?;
     Ok(())
 }
 

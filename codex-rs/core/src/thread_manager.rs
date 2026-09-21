@@ -1013,6 +1013,18 @@ impl ThreadManager {
         let parent = self.get_thread(parent_thread_id).await?;
         let forked_from_thread_id = history.forked_from_id();
         options.initial_history = history;
+        let is_plan_session = matches!(
+            options.session_source,
+            Some(SessionSource::Internal(
+                InternalSessionSource::PlanSupervisor
+            ))
+        );
+        if is_plan_session {
+            let environments = parent.session.services.turn_environments.snapshot().await;
+            options.environments = Some(environments.to_selections());
+            options.inherited_environments = Some(environments);
+            options.client_mcp_extensions = parent.client_mcp_extensions();
+        }
         let mut request = ThreadSpawnRequest::new(
             options,
             Arc::clone(&parent.session.services.auth_manager),
@@ -1020,7 +1032,51 @@ impl ThreadManager {
         );
         request.parent_thread_id = Some(parent_thread_id);
         request.forked_from_thread_id = forked_from_thread_id;
+        if is_plan_session {
+            request.inherited_exec_policy = Some(parent.session.services.exec_policy.clone());
+        }
         Box::pin(self.state.spawn_thread(request)).await
+    }
+
+    /// Starts a visible child from its parent's current conversation and execution bindings.
+    /// Unlike internal reviewers, this thread publishes events and accepts host approvals.
+    pub async fn spawn_child_session(
+        &self,
+        parent_thread_id: ThreadId,
+        mut options: StartThreadOptions,
+    ) -> CodexResult<NewThread> {
+        if !matches!(options.session_source, Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn { parent_thread_id: owner, .. })) if owner == parent_thread_id)
+        {
+            return Err(CodexErr::InvalidRequest(
+                "child session requires its parent in the session source".to_string(),
+            ));
+        }
+        let parent = self.get_thread(parent_thread_id).await?;
+        let environments = parent.session.services.turn_environments.snapshot().await;
+        if matches!(options.initial_history, InitialHistory::New) {
+            options.initial_history = InitialHistory::Forked(
+                parent
+                    .conversation_history_snapshot()
+                    .await
+                    .items()
+                    .map(|item| RolloutItem::ResponseItem(item.clone().into()))
+                    .collect(),
+            );
+        }
+        options.environments = Some(environments.to_selections());
+        options.inherited_environments = Some(environments);
+        options.client_mcp_extensions = parent.client_mcp_extensions();
+        let mut request = ThreadSpawnRequest::new(
+            options,
+            parent.session.services.auth_manager.clone(),
+            parent.session.services.agent_control.clone(),
+        );
+        request.parent_thread_id = Some(parent_thread_id);
+        request.forked_from_thread_id = Some(parent_thread_id);
+        request.inherited_exec_policy = Some(parent.session.services.exec_policy.clone());
+        let thread = Box::pin(self.state.spawn_thread(request)).await?;
+        self.state.notify_thread_created(thread.thread_id);
+        Ok(thread)
     }
 
     /// Allocates a thread ID before startup so a caller can associate host-owned state with it.

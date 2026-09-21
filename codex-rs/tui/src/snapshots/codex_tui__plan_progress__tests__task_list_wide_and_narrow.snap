@@ -1,0 +1,76 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 99
+expression: "[80, 46, 45, 35, 34, 28, 27,\n12].into_iter().map(|width|\nformat!(\"{width} columns\\n{}\",\nsnapshot(&progress, width))).collect::<Vec<_>>().join(\"\\n\\n\")"
+---
+80 columns
+• Task List  1/3                                                                
+  └ ✔ A01 Inspect                                         0:25  ━━━━━━━━━━  1:00
+    □ A02 验证实现路径                                    0:30  ━━━━━─────  1:00
+    □ A03 Test                                            0:00  ──────────  1:00
+                                                                                
+    A01                   A02                       A03                         
+    ━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━─────────────┼───────────────────────────
+
+46 columns
+• Task List  1/3                              
+  └ ✔ A01 Inspect       0:25  ━━━━━━━━━━  1:00
+    □ A02 验证实现路径  0:30  ━━━━━─────  1:00
+    □ A03 Test          0:00  ──────────  1:00
+                                              
+    A01         A02           A03             
+    ━━━━━━━━━━━━┿━━━━━━───────┼───────────────
+
+45 columns
+• Task List  1/3                             
+  └ ✔ A01 Inspect                 0:25 → 1:00
+    □ A02 验证实现路径            0:30 → 1:00
+    □ A03 Test                    0:00 → 1:00
+                                             
+    A01         A02           A03            
+    ━━━━━━━━━━━━┿━━━━━━───────┼──────────────
+
+35 columns
+• Task List  1/3                   
+  └ ✔ A01 Inspect       0:25 → 1:00
+    □ A02 验证实现路径  0:30 → 1:00
+    □ A03 Test          0:00 → 1:00
+                                   
+    A01      A02       A03         
+    ━━━━━━━━━┿━━━━─────┼───────────
+
+34 columns
+• Task List  1/3                  
+  └ ✔ A01 Inspect             1:00
+    □ A02 验证实现路径        1:00
+    □ A03 Test                1:00
+                                  
+    A01      A02       A03        
+    ━━━━━━━━━┿━━━━─────┼──────────
+
+28 columns
+• Task List  1/3            
+  └ ✔ A01 Inspect       1:00
+    □ A02 验证实现路径  1:00
+    □ A03 Test          1:00
+                            
+    A01    A02     A03      
+    ━━━━━━━┿━━━────┼────────
+
+27 columns
+• Task List  1/3           
+  └ ✔ A01 Inspect          
+    □ A02 验证实现路径     
+    □ A03 Test             
+                           
+    A01    A02    A03      
+    ━━━━━━━┿━━────┼────────
+
+12 columns
+• Task List 
+  └ ✔ A01 I…
+    □ A02 … 
+    □ A03 T…
+            
+    A02 A03 
+    ━━──┼───

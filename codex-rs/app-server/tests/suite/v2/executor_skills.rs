@@ -106,10 +106,7 @@ async fn exercise_executor_skill(scenario: ExecutorSkillScenario) -> Result<()> 
     };
     let (approval_policy, requested_permission_feature) =
         if scenario == ExecutorSkillScenario::RestrictedDeniedReference {
-            (
-                "on-request",
-                "\n[features]\nrequest_permissions_tool = true\n",
-            )
+            ("on-request", "request_permissions_tool = true")
         } else {
             ("never", "")
         };
@@ -138,6 +135,8 @@ wire_api = "responses"
 request_max_retries = 0
 stream_max_retries = 0
 {permission_profile}
+[features]
+continuous_planning = false
 {requested_permission_feature}
 "#,
             server.uri()

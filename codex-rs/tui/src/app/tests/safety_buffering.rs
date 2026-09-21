@@ -194,6 +194,7 @@ async fn interrupt_after_inactive_steer(switch: SteerSwitch) -> Result<()> {
             r#"
 model = "{CURRENT_MODEL}"
 model_provider = "{MODEL_PROVIDER_ID}"
+features.continuous_planning = false
 
 [model_providers.{MODEL_PROVIDER_ID}]
 name = "Interrupt test"
@@ -540,6 +541,7 @@ stream_max_retries = 0
 
 [features]
 goals = true
+continuous_planning = false
 "#,
             server.uri()
         ),

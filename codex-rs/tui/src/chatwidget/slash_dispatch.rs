@@ -318,7 +318,7 @@ impl ChatWidget {
                 self.apply_plan_slash_command();
             }
             SlashCommand::Goal => {
-                if !self.config.features.enabled(Feature::Goals) {
+                if !self.goals_enabled() {
                     return;
                 }
                 if let Some(thread_id) = self.thread_id {
@@ -867,7 +867,7 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Goal if !trimmed.is_empty() => {
-                if !self.config.features.enabled(Feature::Goals) {
+                if !self.goals_enabled() {
                     if source == SlashCommandDispatchSource::Live {
                         self.clear_live_goal_submission();
                     }
@@ -1139,7 +1139,7 @@ impl ChatWidget {
             connectors_enabled: self.connectors_enabled(),
             plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             token_activity_command_enabled: self.has_codex_backend_auth,
-            goal_command_enabled: self.config.features.enabled(Feature::Goals),
+            goal_command_enabled: self.goals_enabled(),
             service_tier_commands_enabled: self.fast_mode_enabled(),
             personality_command_enabled: self.config.features.enabled(Feature::Personality),
             voice_command_enabled: self.realtime_conversation_available_for_thread,

@@ -737,6 +737,9 @@
             "context_management": {
               "$ref": "#/definitions/FeatureToml_for_ContextManagementConfigToml"
             },
+            "continuous_planning": {
+              "type": "boolean"
+            },
             "current_time_reminder": {
               "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"
             },
@@ -4053,6 +4056,7 @@
             "global": {
               "clear_terminal": null,
               "copy": null,
+              "focus_plan": null,
               "open_agents": null,
               "open_external_editor": null,
               "open_transcript": null,
@@ -4741,6 +4745,14 @@
           ],
           "description": "Copy the last agent response to the clipboard."
         },
+        "focus_plan": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Focus or leave the Supervisor task list."
+        },
         "open_agents": {
           "allOf": [
             {
@@ -4930,6 +4942,7 @@
           "default": {
             "clear_terminal": null,
             "copy": null,
+            "focus_plan": null,
             "open_agents": null,
             "open_external_editor": null,
             "open_transcript": null,
@@ -6261,6 +6274,9 @@
         },
         "context_management": {
           "$ref": "#/definitions/FeatureToml_for_ContextManagementConfigToml"
+        },
+        "continuous_planning": {
+          "type": "boolean"
         },
         "current_time_reminder": {
           "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"

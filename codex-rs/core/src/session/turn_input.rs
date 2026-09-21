@@ -213,6 +213,7 @@ pub(super) async fn handle(
                     TurnStartKind::User
                 }
                 SubmittedTurnInput::UserInput { .. }
+                | SubmittedTurnInput::ContextualItems { .. }
                 | SubmittedTurnInput::ResponseItem(_)
                 | SubmittedTurnInput::InterAgentCommunication(_) => TurnStartKind::Automatic,
             };
@@ -252,8 +253,14 @@ async fn start_or_steer(
         responsesapi_client_metadata,
         ..
     } = request;
+    let kind = if matches!(&input, SubmittedTurnInput::ContextualItems { .. }) {
+        TurnStartKind::Automatic
+    } else {
+        TurnStartKind::User
+    };
     let has_explicit_input = match &input {
         SubmittedTurnInput::UserInput { content, .. } => !content.is_empty(),
+        SubmittedTurnInput::ContextualItems { items, .. } => !items.is_empty(),
         SubmittedTurnInput::ResponseItem(ResponseItem::FunctionCallOutput {
             call_id: None,
             ..
@@ -304,10 +311,12 @@ async fn start_or_steer(
                 Some(admission)
             };
             let Some(turn_context) = settings
-                .apply_started(session, submission_id.clone(), TurnStartKind::User)
+                .apply_started(session, submission_id.clone(), kind)
                 .await?
             else {
-                unreachable!("explicit user input can enter Plan mode");
+                return Ok(TurnInputSubmission::NotSubmitted {
+                    reason: NotSubmittedReason::PlanMode,
+                });
             };
             if let Some(responsesapi_client_metadata) = responsesapi_client_metadata {
                 turn_context
@@ -322,7 +331,7 @@ async fn start_or_steer(
             }
             let mut task_input = merge_additional_context_input(session, additional_context).await;
             if has_explicit_input {
-                task_input.push(pending_turn_input(session, input).await);
+                task_input.extend(pending_turn_inputs(session, input).await);
             }
             session
                 .spawn_task(turn_context, task_input, RegularTask::new())
@@ -443,7 +452,7 @@ async fn start_if_idle(
             if let SubmittedTurnInput::UserInput { content, .. } = &input {
                 turn_context.session_telemetry.user_prompt(content);
             }
-            task_input.push(pending_turn_input(session, input).await);
+            task_input.extend(pending_turn_inputs(session, input).await);
         }
         TurnStartKind::Automatic => {
             // Empty automatic user input resumes sampling without a new message.
@@ -452,7 +461,7 @@ async fn start_if_idle(
                     .input_queue
                     .extend_pending_input_for_turn_state(
                         turn_state.as_ref(),
-                        vec![pending_turn_input(session, input).await],
+                        pending_turn_inputs(session, input).await,
                     )
                     .await;
             }
@@ -640,15 +649,15 @@ impl Session {
                     .turn_context
                     .session_telemetry
                     .user_prompt(content);
-                TurnInput::UserInput {
+                vec![TurnInput::UserInput {
                     content: std::mem::take(content),
                     client_id: client_id.clone(),
                     acceptance_order: self.reserve_user_input_order().await,
-                }
+                }]
             }
-            input => pending_turn_input(self, input.clone()).await,
+            input => pending_turn_inputs(self, input.clone()).await,
         };
-        pending_input.push(input);
+        pending_input.extend(input);
         self.input_queue
             .extend_pending_input_and_accept_mailbox_delivery_for_turn_state(
                 active_turn.turn_state.as_ref(),
@@ -674,8 +683,23 @@ async fn merge_additional_context_input(
         .collect()
 }
 
-async fn pending_turn_input(session: &Session, input: SubmittedTurnInput) -> TurnInput {
-    match input {
+async fn pending_turn_inputs(session: &Session, input: SubmittedTurnInput) -> Vec<TurnInput> {
+    let input = match input {
+        SubmittedTurnInput::ContextualItems {
+            items,
+            presentation,
+        } => {
+            let mut pending = Vec::new();
+            if let Some(item) = presentation {
+                pending.push(TurnInput::Presentation(item));
+            }
+            pending.extend(
+                items
+                    .into_iter()
+                    .map(|item| TurnInput::ResponseItem(item.into())),
+            );
+            return pending;
+        }
         SubmittedTurnInput::UserInput { content, client_id } => TurnInput::UserInput {
             content,
             client_id,
@@ -694,5 +718,6 @@ async fn pending_turn_input(session: &Session, input: SubmittedTurnInput) -> Tur
         SubmittedTurnInput::InterAgentCommunication(communication) => {
             TurnInput::InterAgentCommunication(communication)
         }
-    }
+    };
+    vec![input]
 }

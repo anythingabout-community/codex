@@ -31,6 +31,17 @@ pub struct TurnStopInput<'a> {
     pub turn_store: &'a ExtensionData,
 }
 
+/// A terminal turn snapshot, delivered after the host releases the active turn.
+/// Implementations must use the turn identity instead of assuming this is still
+/// the thread's latest turn; another input may already have been accepted.
+pub struct TurnFinishedInput<'a> {
+    pub turn_id: &'a str,
+    pub last_agent_message: Option<&'a str>,
+    pub error: Option<&'a codex_protocol::protocol::ErrorEvent>,
+    pub thread_store: &'a ExtensionData,
+    pub turn_store: &'a ExtensionData,
+}
+
 /// Input supplied when the host aborts a turn.
 pub struct TurnAbortInput<'a> {
     /// Reason the host aborted the turn.

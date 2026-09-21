@@ -374,6 +374,25 @@
       ],
       "type": "string"
     },
+    "DirectedMessage": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "recipient": {
+          "$ref": "#/definitions/MessageRecipient"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "recipient",
+        "text"
+      ],
+      "type": "object"
+    },
     "DynamicToolCallOutputContentItem": {
       "oneOf": [
         {
@@ -788,6 +807,14 @@
           "type": "string"
         }
       ]
+    },
+    "MessageRecipient": {
+      "enum": [
+        "user",
+        "supervisor",
+        "implementer"
+      ],
+      "type": "string"
     },
     "MisalignmentErrorDetails": {
       "properties": {
@@ -1322,6 +1349,51 @@
     },
     "ThreadItem": {
       "oneOf": [
+        {
+          "properties": {
+            "audience": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/MessageRecipient"
+                }
+              ],
+              "description": "Conversation in which this host-generated projection is presented."
+            },
+            "finalAnswer": {
+              "type": "boolean"
+            },
+            "id": {
+              "description": "The source assistant message ID; block IDs append their one-based index.",
+              "type": "string"
+            },
+            "messages": {
+              "items": {
+                "$ref": "#/definitions/DirectedMessage"
+              },
+              "type": "array"
+            },
+            "sender": {
+              "$ref": "#/definitions/MessageRecipient"
+            },
+            "type": {
+              "enum": [
+                "continuousPlanningMessages"
+              ],
+              "title": "ContinuousPlanningMessagesThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "audience",
+            "finalAnswer",
+            "id",
+            "messages",
+            "sender",
+            "type"
+          ],
+          "title": "ContinuousPlanningMessagesThreadItem",
+          "type": "object"
+        },
         {
           "properties": {
             "clientId": {

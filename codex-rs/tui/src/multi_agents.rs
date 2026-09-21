@@ -86,6 +86,16 @@ pub(crate) fn format_agent_picker_item_name(
     agent_role: Option<&str>,
     is_primary: bool,
 ) -> String {
+    match agent_role {
+        Some("implementer") => return "Implementer · read only".to_string(),
+        Some("supervisor") => {
+            return agent_nickname.map_or_else(
+                || "Supervisor".to_string(),
+                |name| format!("{name} [Supervisor]"),
+            );
+        }
+        _ => {}
+    }
     if is_primary {
         return "Main [default]".to_string();
     }

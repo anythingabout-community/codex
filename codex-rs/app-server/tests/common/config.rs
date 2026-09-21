@@ -26,7 +26,8 @@ impl MockResponsesConfig {
             model: "mock-model".to_string(),
             approval_policy: "never".to_string(),
             sandbox_mode: "read-only".to_string(),
-            features: BTreeMap::new(),
+            // These fixtures exercise the legacy single-agent API. Supervisor tests opt in.
+            features: BTreeMap::from([(Feature::ContinuousPlanning, false)]),
             root_config: Vec::new(),
             provider_config: Vec::new(),
             extra_config: Vec::new(),

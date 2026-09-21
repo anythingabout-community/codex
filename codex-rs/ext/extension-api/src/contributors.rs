@@ -55,6 +55,7 @@ pub use turn_input::TurnInputContext;
 pub use turn_input::TurnInputEnvironment;
 pub use turn_lifecycle::TurnAbortInput;
 pub use turn_lifecycle::TurnErrorInput;
+pub use turn_lifecycle::TurnFinishedInput;
 pub use turn_lifecycle::TurnStartInput;
 pub use turn_lifecycle::TurnStopInput;
 pub use world_state::PreviousWorldStateSection;
@@ -185,6 +186,10 @@ pub trait ThreadLifecycleContributor<C: Sync>: Send + Sync {
 /// extension-private turn state. The host exposes stable identifiers and
 /// extension stores instead of core runtime objects.
 pub trait TurnLifecycleContributor: Send + Sync {
+    /// Observes a terminal snapshot after the active turn has been released.
+    fn on_turn_finished<'a>(&'a self, _input: TurnFinishedInput<'a>) -> ExtensionFuture<'a, ()> {
+        Box::pin(std::future::ready(()))
+    }
     /// Called after turn-scoped extension stores are created, before the task
     /// for the turn starts running.
     fn on_turn_start<'a>(&'a self, input: TurnStartInput<'a>) -> ExtensionFuture<'a, ()> {
@@ -369,12 +374,30 @@ pub trait ApprovalReviewContributor: Send + Sync {
     }
 }
 
+/// Incremental validation for a buffered assistant message. Validators may reject
+/// early to bound memory, but must not dispatch work or reveal unvalidated text.
+pub trait MessageStreamValidator: Send {
+    fn push(&mut self, delta: &str) -> Result<(), String>;
+}
+
 /// Ordered post-processing contribution for one parsed turn item.
 ///
 /// Implementations may mutate the item before it is emitted and may use the
 /// explicitly exposed thread- and turn-lifetime stores when they need durable
 /// extension-private state.
 pub trait TurnItemContributor: Send + Sync {
+    /// Restricts both output buffering and transformation to applicable threads.
+    fn enabled_for(&self, _thread_store: &ExtensionData) -> bool {
+        true
+    }
+
+    /// Creates a fresh bounded validator for each buffered assistant text item.
+    fn message_validator(
+        &self,
+        _thread_store: &ExtensionData,
+    ) -> Option<Box<dyn MessageStreamValidator>> {
+        None
+    }
     fn contribute<'a>(
         &'a self,
         thread_store: &'a ExtensionData,

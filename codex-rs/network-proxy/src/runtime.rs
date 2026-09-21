@@ -242,6 +242,8 @@ pub struct NetworkProxyState {
     execution_attributions: Arc<Mutex<HashMap<String, ExecutionAttribution>>>,
     environment_id: Option<Arc<str>>,
     execution_id: Option<Arc<str>>,
+    #[cfg(test)]
+    pub(crate) dns_answers: HashMap<String, IpAddr>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -279,6 +281,8 @@ impl Clone for NetworkProxyState {
             execution_attributions: self.execution_attributions.clone(),
             environment_id: self.environment_id.clone(),
             execution_id: self.execution_id.clone(),
+            #[cfg(test)]
+            dns_answers: self.dns_answers.clone(),
         }
     }
 }
@@ -366,6 +370,8 @@ impl NetworkProxyState {
             execution_attributions: Arc::new(Mutex::new(HashMap::new())),
             environment_id: None,
             execution_id: None,
+            #[cfg(test)]
+            dns_answers: HashMap::new(),
         }
     }
 
@@ -700,6 +706,10 @@ impl NetworkProxyState {
                 port,
                 DNS_LOOKUP_TIMEOUT,
                 |host, port| async move {
+                    #[cfg(test)]
+                    if let Some(ip) = self.dns_answers.get(&host) {
+                        return Ok(vec![SocketAddr::new(*ip, port)]);
+                    }
                     lookup_host((host.as_str(), port))
                         .await
                         .map(Iterator::collect)
@@ -1191,7 +1201,9 @@ pub(crate) fn network_proxy_state_for_policy(
         config,
     };
 
-    NetworkProxyState::with_reloader(state, Arc::new(NoopReloader))
+    let mut state = NetworkProxyState::with_reloader(state, Arc::new(NoopReloader));
+    state.dns_answers = crate::test_support::public_dns_answers();
+    state
 }
 
 #[cfg(test)]

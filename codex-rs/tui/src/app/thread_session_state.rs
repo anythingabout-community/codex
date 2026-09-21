@@ -195,22 +195,22 @@ mod tests {
     #[tokio::test]
     async fn permission_settings_sync_updates_active_snapshot_without_rewriting_side_thread() {
         let mut app = make_test_app().await;
-        let main_thread_id =
+        let implementer_thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000401").expect("valid thread");
         let side_thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
-        let main_session = test_thread_session(main_thread_id, test_path_buf("/tmp/main"));
+        let main_session = test_thread_session(implementer_thread_id, test_path_buf("/tmp/main"));
         let side_session = ThreadSessionState {
             approval_policy: AskForApproval::OnRequest,
             permission_profile: PermissionProfile::workspace_write(),
             ..test_thread_session(side_thread_id, test_path_buf("/tmp/side"))
         };
 
-        app.primary_thread_id = Some(main_thread_id);
-        app.active_thread_id = Some(main_thread_id);
+        app.primary_thread_id = Some(implementer_thread_id);
+        app.active_thread_id = Some(implementer_thread_id);
         app.primary_session_configured = Some(main_session.clone());
         app.thread_event_channels.insert(
-            main_thread_id,
+            implementer_thread_id,
             ThreadEventChannel::new_with_session(
                 /*capacity*/ 4,
                 main_session.clone(),
@@ -226,7 +226,7 @@ mod tests {
             ),
         );
         app.side_threads
-            .insert(side_thread_id, SideThreadState::new(main_thread_id));
+            .insert(side_thread_id, SideThreadState::new(implementer_thread_id));
         app.config.permissions.approval_policy =
             codex_config::Constrained::allow_any(AskForApproval::OnRequest.to_core());
         app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
@@ -262,7 +262,7 @@ mod tests {
 
         let main_store_session = app
             .thread_event_channels
-            .get(&main_thread_id)
+            .get(&implementer_thread_id)
             .expect("main thread channel")
             .store
             .lock()

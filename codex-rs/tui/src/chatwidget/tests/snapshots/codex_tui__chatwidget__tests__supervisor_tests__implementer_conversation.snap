@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/supervisor_tests.rs
+expression: lines_to_single_string(&lines)
+---
+• Ran echo verified
+  └ verified

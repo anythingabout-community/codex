@@ -9,6 +9,11 @@ impl ChatWidget {
         turn: &Turn,
         replay_kind: Option<ReplayKind>,
     ) -> Option<history_cell::FinalMessageSeparator> {
+        // Supervisor replies can finish while its Implementer is still working.
+        // Step completion and timing belong to the task rails in this conversation.
+        if self.supervisor_enabled() {
+            return None;
+        }
         if self
             .turn_lifecycle
             .rendered_completion_turn_ids

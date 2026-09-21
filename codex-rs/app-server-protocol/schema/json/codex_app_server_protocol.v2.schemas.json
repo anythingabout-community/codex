@@ -1933,6 +1933,78 @@
             },
             "method": {
               "enum": [
+                "thread/supervisor/read"
+              ],
+              "title": "Thread/supervisor/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSupervisorReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/supervisor/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/supervisor/history/list"
+              ],
+              "title": "Thread/supervisor/history/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSupervisorHistoryListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/supervisor/history/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/supervisor/interrupt"
+              ],
+              "title": "Thread/supervisor/interruptRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSupervisorInterruptParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/supervisor/interruptRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/goal/set"
               ],
               "title": "Thread/goal/setRequestMethod",
@@ -6431,6 +6503,68 @@
       "title": "ContextCompactedNotification",
       "type": "object"
     },
+    "ContinuousPlanning": {
+      "properties": {
+        "acceptance": {
+          "type": "string"
+        },
+        "estimatedCompletionAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "description": "Host-assigned identity, retained across revisions and changed for a new task.",
+          "type": "string"
+        },
+        "nextReviewAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "review": {
+          "$ref": "#/definitions/PlanReviewState"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/definitions/PlanStage"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/definitions/TimedPlanStep"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "version": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "acceptance",
+        "estimatedCompletionAt",
+        "id",
+        "nextReviewAt",
+        "objective",
+        "reason",
+        "review",
+        "stages",
+        "steps",
+        "updatedAt",
+        "version"
+      ],
+      "type": "object"
+    },
     "ConversationTextRole": {
       "enum": [
         "user",
@@ -6495,6 +6629,25 @@
         "life_sciences"
       ],
       "type": "string"
+    },
+    "DirectedMessage": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "recipient": {
+          "$ref": "#/definitions/MessageRecipient"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "recipient",
+        "text"
+      ],
+      "type": "object"
     },
     "DynamicToolCallOutputContentItem": {
       "oneOf": [
@@ -11015,6 +11168,14 @@
         }
       ]
     },
+    "MessageRecipient": {
+      "enum": [
+        "user",
+        "supervisor",
+        "implementer"
+      ],
+      "type": "string"
+    },
     "MigrationDetails": {
       "properties": {
         "commands": {
@@ -11945,6 +12106,92 @@
       ],
       "title": "PlanDeltaNotification",
       "type": "object"
+    },
+    "PlanReviewState": {
+      "enum": [
+        "idle",
+        "due",
+        "running",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "PlanStage": {
+      "properties": {
+        "acceptance": {
+          "type": "string"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "estimateSeconds": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "acceptance",
+        "assumptions",
+        "estimateSeconds",
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanStepDefinition": {
+      "properties": {
+        "acceptance": {
+          "type": "string"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "estimateSeconds": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "stageId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "acceptance",
+        "dependencies",
+        "estimateSeconds",
+        "id",
+        "stageId",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanStepState": {
+      "enum": [
+        "pending",
+        "running",
+        "reviewing",
+        "completed",
+        "blocked",
+        "cancelled"
+      ],
+      "type": "string"
     },
     "PlanType": {
       "enum": [
@@ -15915,6 +16162,66 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/supervisor/updated"
+              ],
+              "title": "Thread/supervisor/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSupervisorUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/supervisor/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/supervisor/activity"
+              ],
+              "title": "Thread/supervisor/activityNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSupervisorActivityNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/supervisor/activityNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/plan/updated"
+              ],
+              "title": "Thread/plan/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadPlanUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/plan/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/goal/updated"
               ],
               "title": "Thread/goal/updatedNotificationMethod",
@@ -17992,6 +18299,317 @@
       ],
       "type": "object"
     },
+    "SupervisorActivity": {
+      "description": "Only native tool activity crosses this boundary, never Implementer dialogue.",
+      "oneOf": [
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "item": {
+                  "$ref": "#/definitions/ThreadItem"
+                },
+                "startedAtMs": {
+                  "description": "Unix timestamp (in milliseconds) when this item lifecycle started.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "item",
+                "startedAtMs",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "itemStarted"
+              ],
+              "title": "ItemStartedSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "ItemStartedSupervisorActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "completedAtMs": {
+                  "description": "Unix timestamp (in milliseconds) when this item lifecycle completed.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "item": {
+                  "$ref": "#/definitions/ThreadItem"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "completedAtMs",
+                "item",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "itemCompleted"
+              ],
+              "title": "ItemCompletedSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "ItemCompletedSupervisorActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "delta": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "delta",
+                "itemId",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "commandOutput"
+              ],
+              "title": "CommandOutputSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "CommandOutputSupervisorActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "description": "Deprecated legacy notification for `apply_patch` textual output.\n\nThe server no longer emits this notification.",
+              "properties": {
+                "delta": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "delta",
+                "itemId",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "fileOutput"
+              ],
+              "title": "FileOutputSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "FileOutputSupervisorActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "processId": {
+                  "type": "string"
+                },
+                "stdin": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId",
+                "processId",
+                "stdin",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "terminalInteraction"
+              ],
+              "title": "TerminalInteractionSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "TerminalInteractionSupervisorActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                },
+                "turnId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId",
+                "message",
+                "threadId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "type": {
+              "enum": [
+                "mcpProgress"
+              ],
+              "title": "McpProgressSupervisorActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "type"
+          ],
+          "title": "McpProgressSupervisorActivity",
+          "type": "object"
+        }
+      ]
+    },
+    "SupervisorState": {
+      "additionalProperties": false,
+      "properties": {
+        "activitySequence": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "executionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementerThreadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "revision": {
+          "default": 0,
+          "format": "int64",
+          "type": "integer"
+        },
+        "stepId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenBudget": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "totalTokens": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "updatedAt": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activitySequence",
+        "paused",
+        "totalTokens",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
     "TerminalInteractionNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -19061,6 +19679,51 @@
     },
     "ThreadItem": {
       "oneOf": [
+        {
+          "properties": {
+            "audience": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/MessageRecipient"
+                }
+              ],
+              "description": "Conversation in which this host-generated projection is presented."
+            },
+            "finalAnswer": {
+              "type": "boolean"
+            },
+            "id": {
+              "description": "The source assistant message ID; block IDs append their one-based index.",
+              "type": "string"
+            },
+            "messages": {
+              "items": {
+                "$ref": "#/definitions/DirectedMessage"
+              },
+              "type": "array"
+            },
+            "sender": {
+              "$ref": "#/definitions/MessageRecipient"
+            },
+            "type": {
+              "enum": [
+                "continuousPlanningMessages"
+              ],
+              "title": "ContinuousPlanningMessagesThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "audience",
+            "finalAnswer",
+            "id",
+            "messages",
+            "sender",
+            "type"
+          ],
+          "title": "ContinuousPlanningMessagesThreadItem",
+          "type": "object"
+        },
         {
           "properties": {
             "clientId": {
@@ -20286,6 +20949,29 @@
         "threadId"
       ],
       "title": "ThreadNameUpdatedNotification",
+      "type": "object"
+    },
+    "ThreadPlanUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "observedAt": {
+          "description": "Server clock when this view was sent, including snapshots on resume.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/definitions/ContinuousPlanning"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "observedAt",
+        "plan",
+        "threadId"
+      ],
+      "title": "ThreadPlanUpdatedNotification",
       "type": "object"
     },
     "ThreadProjectUpdatedNotification": {
@@ -21939,6 +22625,226 @@
       "title": "ThreadStatusChangedNotification",
       "type": "object"
     },
+    "ThreadSupervisorActivityNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "activity": {
+          "$ref": "#/definitions/SupervisorActivity"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "executionId": {
+          "type": "string"
+        },
+        "implementerThreadId": {
+          "type": "string"
+        },
+        "sequence": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "stepId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activity",
+        "createdAt",
+        "executionId",
+        "implementerThreadId",
+        "sequence",
+        "stepId",
+        "threadId",
+        "title"
+      ],
+      "title": "ThreadSupervisorActivityNotification",
+      "type": "object"
+    },
+    "ThreadSupervisorHistoryListParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadSupervisorHistoryListParams",
+      "type": "object"
+    },
+    "ThreadSupervisorHistoryListResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "activity": {
+                "$ref": "#/definitions/SupervisorActivity"
+              },
+              "createdAt": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "executionId": {
+                "type": "string"
+              },
+              "implementerThreadId": {
+                "type": "string"
+              },
+              "sequence": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "stepId": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "activity",
+              "createdAt",
+              "executionId",
+              "implementerThreadId",
+              "sequence",
+              "stepId",
+              "threadId",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "title": "ThreadSupervisorHistoryListResponse",
+      "type": "object"
+    },
+    "ThreadSupervisorInterruptParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadSupervisorInterruptParams",
+      "type": "object"
+    },
+    "ThreadSupervisorInterruptResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ThreadSupervisorInterruptResponse",
+      "type": "object"
+    },
+    "ThreadSupervisorReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadSupervisorReadParams",
+      "type": "object"
+    },
+    "ThreadSupervisorReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ContinuousPlanning"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SupervisorState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "title": "ThreadSupervisorReadResponse",
+      "type": "object"
+    },
+    "ThreadSupervisorUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "observedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ContinuousPlanning"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/SupervisorState"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "observedAt",
+        "state",
+        "threadId"
+      ],
+      "title": "ThreadSupervisorUpdatedNotification",
+      "type": "object"
+    },
     "ThreadTimelineEntry": {
       "description": "EXPERIMENTAL - one item or turn boundary in canonical rollout order.",
       "oneOf": [
@@ -22383,6 +23289,70 @@
       },
       "required": [
         "estimatedUsageCreditsMicros"
+      ],
+      "type": "object"
+    },
+    "TimedPlanStep": {
+      "properties": {
+        "completedAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "definition": {
+          "$ref": "#/definitions/PlanStepDefinition"
+        },
+        "elapsedSeconds": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "initialEstimateSeconds": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "runningSince": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/PlanStepState"
+        },
+        "submittedAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "definition",
+        "elapsedSeconds",
+        "evidence",
+        "initialEstimateSeconds",
+        "owner",
+        "state"
       ],
       "type": "object"
     },

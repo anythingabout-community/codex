@@ -797,6 +797,15 @@ impl TurnRequestProcessor {
             ));
         }
 
+        if codex_supervisor_extension::is_supervisor(thread)
+            && collaboration_mode
+                .as_ref()
+                .is_some_and(|mode| mode.mode == codex_protocol::config_types::ModeKind::Plan)
+        {
+            return Err(invalid_request(
+                "Supervisor owns planning; collaboration mode switching is unavailable in this conversation",
+            ));
+        }
         let collaboration_mode =
             collaboration_mode.map(|mode| self.normalize_collaboration_mode(mode));
         let has_environment_override = environments.is_some();
@@ -1619,6 +1628,9 @@ impl TurnRequestProcessor {
 
         // Submit the interrupt. Turn interrupts respond upon TurnAborted; startup
         // interrupts respond here because startup cancellation has no turn event.
+        if let Err(error) = codex_supervisor_extension::suspend(thread.as_ref()).await {
+            tracing::warn!(%error, "failed to checkpoint the interrupted plan");
+        }
         match self
             .submit_core_op(request_id, thread.as_ref(), Op::Interrupt)
             .await

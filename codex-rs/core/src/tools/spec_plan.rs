@@ -133,6 +133,58 @@ pub(crate) fn build_tool_router(
     step_store: &ExtensionData,
     tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
 ) -> CodexResult<ToolRouter> {
+    if session
+        .services
+        .thread_extension_data
+        .get::<codex_extension_api::SupervisorSession>()
+        .is_some_and(|role| *role == codex_extension_api::SupervisorSession::Supervisor)
+    {
+        let mut registry = ToolRegistry::default();
+        registry.add_with_exposure(
+            RequestUserInputHandler {
+                available_modes: vec![codex_protocol::config_types::ModeKind::Default],
+            },
+            ToolExposure::DirectModelOnly,
+        );
+        registry.add_with_exposure(
+            RequestUserInputAsyncHandler { description: None },
+            ToolExposure::DirectModelOnly,
+        );
+        append_extension_tool_executors(
+            turn_context,
+            model_info,
+            extension_tool_executors(session, step_store)
+                .filter(|tool| tool.tool_name() == ToolName::plain("continuous_planning")),
+            &mut registry,
+        );
+        let specs = registry
+            .entries()
+            .map(|entry| entry.runtime.spec())
+            .collect();
+        return Ok(ToolRouter::from_parts(
+            registry,
+            specs,
+            ToolMode::Direct,
+            BTreeMap::new(),
+            /*tool_namespaces_info*/ None,
+            &[],
+        ));
+    }
+    if matches!(
+        turn_context.session_source,
+        codex_protocol::protocol::SessionSource::Internal(
+            codex_protocol::protocol::InternalSessionSource::PlanSupervisor
+        )
+    ) {
+        return Ok(ToolRouter::from_parts(
+            ToolRegistry::default(),
+            Vec::new(),
+            ToolMode::Direct,
+            std::collections::BTreeMap::new(),
+            /*tool_namespaces_info*/ None,
+            &[],
+        ));
+    }
     let default_agent_type_description =
         crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
     let wait_for_environment_tool_config = session

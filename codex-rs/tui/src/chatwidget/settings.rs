@@ -333,7 +333,7 @@ impl ChatWidget {
 
     pub(super) fn sync_goal_command_enabled(&mut self) {
         self.bottom_pane
-            .set_goal_command_enabled(self.config.features.enabled(Feature::Goals));
+            .set_goal_command_enabled(self.goals_enabled());
     }
 
     pub(super) fn sync_mentions_v2_enabled(&mut self) {
@@ -421,14 +421,17 @@ impl ChatWidget {
     }
 
     pub(super) fn collaboration_modes_enabled(&self) -> bool {
-        true
+        !self.config.features.enabled(Feature::ContinuousPlanning)
     }
 
     pub(super) fn initial_collaboration_mask(
-        _config: &Config,
+        config: &Config,
         model_catalog: &ModelCatalog,
         model_override: Option<&str>,
     ) -> Option<CollaborationModeMask> {
+        if config.features.enabled(Feature::ContinuousPlanning) {
+            return None;
+        }
         let mut mask = collaboration_modes::default_mask(model_catalog)?;
         if let Some(model_override) = model_override {
             mask.model = Some(model_override.to_string());
@@ -640,7 +643,7 @@ impl ChatWidget {
     }
 
     fn goal_status_indicator(&self, now: Instant) -> Option<GoalStatusIndicator> {
-        if !self.config.features.enabled(Feature::Goals) {
+        if !self.goals_enabled() {
             return None;
         }
         self.current_goal_status.as_ref().and_then(|state| {
@@ -654,7 +657,7 @@ impl ChatWidget {
         {
             return;
         }
-        if !self.config.features.enabled(Feature::Goals) {
+        if !self.goals_enabled() {
             self.current_goal_status_indicator = None;
             self.current_goal_status = None;
             self.update_collaboration_mode_indicator();

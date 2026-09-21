@@ -218,6 +218,7 @@ impl ChatWidget {
                 .is_some_and(GoalStatusState::is_active);
             if !follow_up_started
                 && !active_goal_continuing
+                && !self.bottom_pane.has_active_timed_plan()
                 && !self
                     .turn_lifecycle
                     .last_turn_id

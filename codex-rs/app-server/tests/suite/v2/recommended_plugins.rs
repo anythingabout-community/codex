@@ -86,13 +86,11 @@ async fn recommended_plugins_after_external_login(
         &apps_server.chatgpt_base_url,
     )?;
     let config_path = codex_home.path().join("config.toml");
-    let config = std::fs::read_to_string(&config_path)?;
-    std::fs::write(
-        config_path,
-        format!(
-            "{config}\n[features]\napps = true\nplugins = true\ntool_suggest = {tool_suggest_enabled}\n{recommended_plugins_config}"
-        ),
-    )?;
+    let config = std::fs::read_to_string(&config_path)?.replace(
+        "[features]\n",
+        &format!("[features]\napps = true\nplugins = true\ntool_suggest = {tool_suggest_enabled}\n{recommended_plugins_config}"),
+    );
+    std::fs::write(config_path, config)?;
 
     let sqlite_home = codex_home.path().to_string_lossy();
     let mut app_server = TestAppServer::builder()

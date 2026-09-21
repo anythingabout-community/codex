@@ -49,7 +49,9 @@ impl App {
             .and_then(Option::as_mut);
         match notification {
             ServerNotification::ThreadStarted(started) => {
-                if started.thread.ephemeral {
+                if started.thread.ephemeral
+                    || started.thread.agent_role.as_deref() == Some("implementer")
+                {
                     return;
                 }
                 let mut thread = started.thread.clone();

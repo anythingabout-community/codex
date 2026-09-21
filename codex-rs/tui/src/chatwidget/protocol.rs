@@ -36,6 +36,10 @@ impl ChatWidget {
             self.restore_retry_status_header_if_present();
         }
         match notification {
+            ServerNotification::ThreadSupervisorUpdated(update) => {
+                self.on_supervisor_updated(update)
+            }
+            ServerNotification::ThreadSupervisorActivity(_) => {}
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
@@ -56,6 +60,9 @@ impl ChatWidget {
                 }
             }
             ServerNotification::ThreadGoalUpdated(notification) => {
+                if self.supervisor_enabled() {
+                    return;
+                }
                 self.on_thread_goal_updated(notification.goal, notification.turn_id);
             }
             ServerNotification::ThreadGoalCleared(notification) => {
@@ -142,7 +149,18 @@ impl ChatWidget {
             ServerNotification::TurnDiffUpdated(notification) => {
                 self.on_turn_diff(notification.diff)
             }
+            ServerNotification::ThreadPlanUpdated(notification) => {
+                self.bottom_pane.update_timed_plan(
+                    notification.plan,
+                    notification.thread_id,
+                    notification.observed_at,
+                );
+                self.request_redraw();
+            }
             ServerNotification::TurnPlanUpdated(notification) => {
+                if self.bottom_pane.has_timed_plan() {
+                    return;
+                }
                 self.on_plan_update(UpdatePlanArgs {
                     explanation: notification.explanation,
                     plan: notification

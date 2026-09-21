@@ -687,7 +687,9 @@ pub(crate) async fn inspect_pending_input(
             )
             .await
         }
-        TurnInput::ResponseItem(_) | TurnInput::FunctionCallOutput(_) => HookRuntimeOutcome {
+        TurnInput::Presentation(_)
+        | TurnInput::ResponseItem(_)
+        | TurnInput::FunctionCallOutput(_) => HookRuntimeOutcome {
             should_stop: false,
             additional_contexts: Vec::new(),
         },
@@ -721,6 +723,11 @@ pub(crate) async fn record_pending_input(
                 persist_context,
             )
             .await;
+        }
+        TurnInput::Presentation(item) => {
+            let item = TurnItem::Extension(item);
+            sess.emit_turn_item_started(turn_context, &item).await;
+            sess.emit_turn_item_completed(turn_context, item).await;
         }
         TurnInput::ResponseItem(item) => {
             sess.record_annotated_conversation_items(turn_context, model_info, vec![item])

@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
 
+pub mod continuous_planning;
 pub mod image_generation;
 pub mod sleep;
 pub mod web_search;
@@ -33,6 +34,9 @@ pub mod web_search;
 #[serde(tag = "kind")]
 #[ts(tag = "kind")]
 pub enum ExtensionItem {
+    #[serde(rename = "continuous_planning.messages")]
+    #[ts(rename = "continuous_planning.messages")]
+    ContinuousPlanningMessages(continuous_planning::MessageBatch),
     #[serde(rename = "image_gen.generation")]
     #[ts(rename = "image_gen.generation")]
     ImageGeneration(image_generation::ImageGenerationItem),
@@ -49,6 +53,7 @@ impl ExtensionItem {
     /// core or rollout persistence.
     pub fn id(&self) -> &str {
         match self {
+            Self::ContinuousPlanningMessages(item) => &item.id,
             Self::ImageGeneration(item) => &item.id,
             Self::Sleep(item) => &item.id,
             Self::WebSearch(item) => &item.id,

@@ -384,7 +384,8 @@ pub(super) fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<(
     let repo_root = repo_root.display();
     let config = format!(
         "model = \"gpt-5.6-terra\"\nmodel_provider = \"openai\"\n\
-         suppress_unstable_features_warning = true\nanalytics.enabled = false\n\n\
+         suppress_unstable_features_warning = true\nanalytics.enabled = false\n\
+         features.continuous_planning = false\n\n\
          [projects.\"{repo_root}\"]\ntrust_level = \"trusted\"\n"
     );
     std::fs::write(codex_home.join("config.toml"), config)

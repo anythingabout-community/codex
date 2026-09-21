@@ -872,6 +872,8 @@ mod tests {
 
     impl CaptureBackend {
         fn new(width: u16, height: u16) -> Self {
+            // Capture terminal escape sequences regardless of the runner's color preference.
+            crossterm::style::force_color_output(true);
             Self {
                 output: Vec::new(),
                 size: Size { width, height },

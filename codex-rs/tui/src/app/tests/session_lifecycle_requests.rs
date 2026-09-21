@@ -579,6 +579,10 @@ pub(super) fn recorded_params(requests: &RecordedRequests, method: &str) -> Vec<
 async fn make_history_test_app() -> Result<(App, tempfile::TempDir)> {
     let mut app = make_test_app().await;
     let codex_home = tempdir()?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        "[features]\ncontinuous_planning = false\n",
+    )?;
     app.config.codex_home = codex_home.path().to_path_buf().abs();
     app.config.sqlite = SqliteConfig::new_for_testing(codex_home.path().abs());
     Ok((app, codex_home))
@@ -3961,6 +3965,10 @@ fn session_lifecycle_avoids_redundant_subagent_metadata_reads() -> Result<()> {
             runtime.block_on(async {
                 let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
                 let codex_home = tempdir()?;
+                std::fs::write(
+                    codex_home.path().join("config.toml"),
+                    "[features]\ncontinuous_planning = false\n",
+                )?;
                 app.config.codex_home = codex_home.path().to_path_buf().abs();
                 app.config.sqlite =
                     codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());

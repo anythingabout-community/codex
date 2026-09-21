@@ -45,11 +45,13 @@ mod goals;
 mod logs;
 mod memories;
 mod memory_versions;
+mod plans;
 mod projects;
 mod queued_items;
 mod recovery;
 mod remote_control;
 mod rollout_migration;
+mod supervisor;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod thread_attachments;

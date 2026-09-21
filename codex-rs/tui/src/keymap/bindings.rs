@@ -250,6 +250,7 @@ macro_rules! define_runtime_action_bindings {
 define_runtime_action_bindings! {
     "global" => Global, app, global [
         open_agents,
+        focus_plan,
         open_transcript,
         open_external_editor,
         copy,

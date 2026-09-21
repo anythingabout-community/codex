@@ -77,7 +77,9 @@ impl ThreadGoalRequestProcessor {
     }
 
     pub(crate) async fn emit_resume_goal_snapshot(&self, thread_id: ThreadId) {
-        if !self.config.features.enabled(Feature::Goals) {
+        if !self.config.features.enabled(Feature::Goals)
+            || self.config.features.enabled(Feature::ContinuousPlanning)
+        {
             return;
         }
         self.emit_thread_goal_snapshot(thread_id).await;
@@ -87,7 +89,8 @@ impl ThreadGoalRequestProcessor {
         &self,
         thread: &CodexThread,
     ) -> (bool, Option<StateDbHandle>) {
-        let emit_thread_goal_update = self.config.features.enabled(Feature::Goals);
+        let emit_thread_goal_update = self.config.features.enabled(Feature::Goals)
+            && !codex_supervisor_extension::is_supervisor(thread);
         let thread_goal_state_db = if emit_thread_goal_update {
             if let Some(state_db) = thread.state_db() {
                 Some(state_db)
@@ -286,6 +289,11 @@ impl ThreadGoalRequestProcessor {
     ) -> Result<StateDbHandle, JSONRPCErrorError> {
         if let Ok(thread) = self.thread_manager.get_thread(thread_id).await {
             if matches!(access, GoalAccess::Mutate) {
+                if codex_supervisor_extension::is_supervisor(&thread) {
+                    return Err(invalid_request(
+                        "Supervisor owns this task; send the objective or change to its conversation",
+                    ));
+                }
                 ensure_direct_input_allowed(thread.as_ref()).await?;
             }
             if thread.rollout_path().is_none() {
@@ -297,6 +305,19 @@ impl ThreadGoalRequestProcessor {
                 return Ok(state_db);
             }
         } else {
+            if matches!(access, GoalAccess::Mutate)
+                && self.config.features.enabled(Feature::ContinuousPlanning)
+                && let Some(db) = &self.state_db
+                && db
+                    .read_supervisor(thread_id)
+                    .await
+                    .map_err(|error| internal_error(error.to_string()))?
+                    .is_some()
+            {
+                return Err(invalid_request(
+                    "Supervisor owns this task; send the objective or change to its conversation",
+                ));
+            }
             let rollout_path = codex_rollout::find_thread_path_by_id_str(
                 &self.config.codex_home,
                 &thread_id.to_string(),

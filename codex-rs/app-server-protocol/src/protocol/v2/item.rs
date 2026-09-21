@@ -15,6 +15,8 @@ use crate::protocol::item_builders::convert_patch_changes;
 use crate::protocol::item_builders::review_output_text;
 use codex_experimental_api_macros::ExperimentalApi;
 use codex_extension_items::ExtensionItem;
+pub use codex_extension_items::continuous_planning::MessageBatch;
+pub use codex_extension_items::continuous_planning::MessageRecipient;
 pub use codex_extension_items::image_generation::ImageGenerationFailure;
 pub use codex_extension_items::image_generation::ImageGenerationItem;
 pub use codex_extension_items::sleep::SleepItem;
@@ -232,6 +234,7 @@ impl CommandAction {
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
 pub enum ThreadItem {
+    ContinuousPlanningMessages(codex_extension_items::continuous_planning::MessageBatch),
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     UserMessage {
@@ -436,6 +439,37 @@ pub struct HookPromptFragment {
 }
 
 impl ThreadItem {
+    /// Expands already-admitted messages for display only; never dispatches work.
+    pub fn into_visible_messages(self) -> Vec<Self> {
+        let Self::ContinuousPlanningMessages(batch) = self else {
+            return vec![self];
+        };
+        batch
+            .messages
+            .into_iter()
+            .filter(|message| {
+                message.recipient == batch.audience
+                    || message.recipient == MessageRecipient::Supervisor
+            })
+            .map(|message| Self::AgentMessage {
+                id: message.id,
+                text: if message.recipient == MessageRecipient::Implementer {
+                    format!("Supervisor:\n{}", message.text)
+                } else {
+                    message.text
+                },
+                phase: Some(if batch.final_answer {
+                    MessagePhase::FinalAnswer
+                } else {
+                    MessagePhase::Commentary
+                }),
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            })
+            .collect()
+    }
+
     pub fn id(&self) -> &str {
         match self {
             ThreadItem::UserMessage { id, .. }
@@ -454,6 +488,7 @@ impl ThreadItem {
             | ThreadItem::EnteredReviewMode { id, .. }
             | ThreadItem::ExitedReviewMode { id, .. }
             | ThreadItem::ContextCompaction { id, .. } => id,
+            ThreadItem::ContinuousPlanningMessages(item) => &item.id,
             ThreadItem::WebSearch(item) => &item.id,
             ThreadItem::Sleep(item) => &item.id,
             ThreadItem::ImageGeneration(item) => &item.id,
@@ -980,6 +1015,9 @@ impl From<CoreTurnItem> for ThreadItem {
                 path: image.path.into(),
             },
             CoreTurnItem::Extension(extension) => match extension {
+                ExtensionItem::ContinuousPlanningMessages(item) => {
+                    ThreadItem::ContinuousPlanningMessages(item)
+                }
                 ExtensionItem::ImageGeneration(item) => ThreadItem::ImageGeneration(item),
                 ExtensionItem::Sleep(item) => ThreadItem::Sleep(item),
                 ExtensionItem::WebSearch(item) => ThreadItem::WebSearch(item),

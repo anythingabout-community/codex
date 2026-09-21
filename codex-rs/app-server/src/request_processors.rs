@@ -723,3 +723,6 @@ pub(crate) fn build_legacy_api_turns_from_rollout_items(items: &[RolloutItem]) -
     }
     builder.finish()
 }
+
+mod thread_plan_processor;
+pub(crate) use thread_plan_processor::ThreadPlanRequestProcessor;

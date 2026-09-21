@@ -1,0 +1,26 @@
+[package]
+name = "codex-supervisor-extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+codex-core = { workspace = true }
+codex-extension-api = { workspace = true }
+codex-extension-items = { workspace = true }
+codex-features = { workspace = true }
+codex-history = { workspace = true }
+codex-protocol = { workspace = true }
+codex-state = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+schemars = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

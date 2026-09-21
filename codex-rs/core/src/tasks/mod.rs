@@ -803,6 +803,7 @@ impl Session {
         } else {
             ThreadIdleCause::Completed
         };
+        let finished_message = last_agent_message.clone();
         let event = if let Some(reason) = abort_reason {
             if reason == TurnAbortReason::Interrupted {
                 run_turn_interrupt_hooks(self, &turn_context, &turn_state).await;
@@ -853,6 +854,20 @@ impl Session {
                 false
             }
         };
+        if !matches!(idle_cause, ThreadIdleCause::Interrupted) {
+            let error = turn_context.terminal_error.lock().await.clone();
+            for contributor in self.services.extensions.turn_lifecycle_contributors() {
+                contributor
+                    .on_turn_finished(codex_extension_api::TurnFinishedInput {
+                        turn_id: &turn_context.sub_id,
+                        last_agent_message: finished_message.as_deref(),
+                        error: error.as_ref(),
+                        thread_store: &self.services.thread_extension_data,
+                        turn_store: turn_context.extension_data.as_ref(),
+                    })
+                    .await;
+            }
+        }
         if cleared_active_turn {
             self.emit_thread_idle_lifecycle_if_idle(idle_cause).await;
         }

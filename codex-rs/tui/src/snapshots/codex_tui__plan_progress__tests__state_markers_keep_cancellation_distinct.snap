@@ -1,0 +1,12 @@
+---
+source: tui/src/plan_progress_tests.rs
+assertion_line: 259
+expression: "snapshot(&progress(plan), 64)"
+---
+• Task List  0/3                                                
+  └ × A01 Inspect                         0:25  ━━━━──────  1:00
+    ◷ A02 Implement                       1:25  ━━━━━━━━━━  1:00
+    ! A03 Test                            0:00  ──────────  1:00
+                                                                
+    A01              A02                  A03                   
+    ━━━━━━━──────────┿━━━━━━━━━━━━━━━━━━━━┼─────────────────────

@@ -43,6 +43,8 @@ pub(crate) struct ThreadExtensionDependencies {
     pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) thread_manager: Weak<ThreadManager>,
     pub(crate) goal_service: Arc<GoalService>,
+    pub(crate) plan_update_sink: codex_supervisor_extension::PlanUpdateSink,
+    pub(crate) supervisor_update_sink: codex_supervisor_extension::SupervisorUpdateSink,
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) executor_skill_provider: Arc<dyn codex_skills_extension::SkillProvider>,
     pub(crate) git_attribution_base_url: String,
@@ -66,6 +68,8 @@ where
         analytics_events_client,
         thread_manager,
         goal_service,
+        plan_update_sink,
+        supervisor_update_sink,
         environment_manager,
         executor_skill_provider,
         git_attribution_base_url,
@@ -82,6 +86,13 @@ where
     }
     codex_history_notes_extension::install(&mut builder, auth_manager.clone());
     if let Some(state_db) = state_db {
+        codex_supervisor_extension::install(
+            &mut builder,
+            state_db.clone(),
+            thread_manager.clone(),
+            plan_update_sink,
+            supervisor_update_sink,
+        );
         codex_goal_extension::install_with_backend(
             &mut builder,
             state_db,
@@ -90,7 +101,10 @@ where
             thread_manager.clone(),
             goal_service,
             |config: &Config| GoalExtensionConfig {
-                enabled: config.features.enabled(codex_features::Feature::Goals),
+                enabled: config.features.enabled(codex_features::Feature::Goals)
+                    && !config
+                        .features
+                        .enabled(codex_features::Feature::ContinuousPlanning),
                 max_goal_token_budget: config.max_goal_token_budget,
             },
         );

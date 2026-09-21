@@ -1,0 +1,26 @@
+---
+source: tui/src/chatwidget/tests/supervisor_tests.rs
+assertion_line: 50
+expression: "format!(\"{}\\n\\n{}\", render_bottom_popup(&chat, 80),\nrender_bottom_popup(&chat, 32))"
+---
+• Task List  0/1
+  └ ◷ A42 验 证 实 现 路 径                                     0:25  ━━━━──────  1:00
+
+    A42
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────────────────────────────────────────
+
+
+› Ask Codex to do anything
+
+  gpt-5.6-sol default · /tmp/project
+
+• Task List  0/1
+  └ ◷ A42 验 证 实 现 路 径       1:00
+
+    A42
+    ━━━━━━━━━━━─────────────────
+
+
+› Ask Codex to do anything
+
+  gpt-5.6-sol default · /tmp/pr…

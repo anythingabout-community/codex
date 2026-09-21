@@ -35,6 +35,11 @@ pub enum TurnInput {
         client_id: Option<String>,
     },
     ResponseItem(ResponseItem),
+    /// Host context admitted atomically through the normal start/steer path.
+    ContextualItems {
+        items: Vec<ResponseItem>,
+        presentation: Option<codex_extension_items::ExtensionItem>,
+    },
     InterAgentCommunication(InterAgentCommunication),
 }
 

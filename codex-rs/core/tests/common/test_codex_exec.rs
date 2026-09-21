@@ -18,6 +18,8 @@ impl TestCodexExecBuilder {
             .env("CODEX_HOME", self.home.path())
             .env("CODEX_SQLITE_HOME", self.home.path())
             .env(CODEX_API_KEY_ENV_VAR, "dummy");
+        // These fixtures mock direct tool calls on the legacy single-agent path.
+        cmd.args(["-c", "features.continuous_planning=false"]);
         cmd
     }
     pub fn cmd_with_server(&self, server: &MockServer) -> assert_cmd::Command {

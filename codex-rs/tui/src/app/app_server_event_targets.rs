@@ -68,6 +68,15 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadTokenUsageUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadSupervisorUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::ThreadSupervisorActivity(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::ThreadPlanUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadGoalUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }

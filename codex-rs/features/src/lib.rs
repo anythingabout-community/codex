@@ -322,6 +322,8 @@ pub enum Feature {
     GuardianExt,
     /// Enable persisted thread goals and automatic goal continuation.
     Goals,
+    /// Continuous stage planning with independent supervision.
+    ContinuousPlanning,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
     /// Enables experimental context management.
@@ -1600,6 +1602,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "guardian_ext",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ContinuousPlanning,
+        key: "continuous_planning",
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::Goals,

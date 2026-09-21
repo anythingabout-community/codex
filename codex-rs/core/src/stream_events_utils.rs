@@ -225,6 +225,9 @@ pub(crate) async fn apply_turn_item_contributors(
 ) {
     let contributors = sess.services.extensions.turn_item_contributors().to_vec();
     for contributor in contributors {
+        if !contributor.enabled_for(&sess.services.thread_extension_data) {
+            continue;
+        }
         if let Err(err) = contributor
             .contribute(&sess.services.thread_extension_data, turn_store, item)
             .await
@@ -282,6 +285,19 @@ pub(crate) async fn finalize_non_tool_response_item(
                     last_agent_message,
                     defers_mailbox_delivery_to_next_turn,
                 )
+            }
+            TurnItem::Extension(
+                codex_extension_items::ExtensionItem::ContinuousPlanningMessages(batch),
+            ) => {
+                use codex_extension_items::continuous_planning::MessageRecipient;
+                let text = batch
+                    .messages
+                    .iter()
+                    .filter(|message| message.recipient != MessageRecipient::Implementer)
+                    .map(|message| message.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                (None, (!text.is_empty()).then_some(text), batch.final_answer)
             }
             _ => (None, None, false),
         };
