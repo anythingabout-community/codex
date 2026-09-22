@@ -36,7 +36,7 @@ pub(super) fn message(id: &str, text: &str) -> String {
     ])
 }
 
-// Supervisor text uses batches; Implementer fixtures remain ordinary final replies.
+// Supervisor text uses XML message documents; Implementer fixtures remain ordinary final replies.
 fn supervisor_response(response: &str) -> String {
     response
         .lines()
@@ -50,11 +50,10 @@ fn supervisor_response(response: &str) -> String {
             {
                 for part in parts {
                     if let Some(text) = part["text"].as_str()
-                        && !text.starts_with("*** Begin Messages")
+                        && !text.starts_with("<messages>")
                     {
-                        part["text"] = json!(format!(
-                            "*** Begin Messages\n*** Message To: User\n+{text}\n*** End Messages"
-                        ));
+                        part["text"] =
+                            json!(format!("<messages>\n<user>\n{text}\n</user>\n</messages>"));
                     }
                 }
             }
@@ -184,12 +183,13 @@ async fn supervisor_owns_tools_and_accepts_recorded_implementer_evidence() -> Re
     let (server, _) = server(vec![
         operation("create", "continuous_planning", json!({"action":"create","version":0,"objective":"Verify a staged task","acceptance":"Command evidence verified","stages":[{"id":"S07","title":"Explore","acceptance":"Capture results","assumptions":[],"estimateSeconds":60}],"steps":[{"id":"A42","stageId":"S07","title":"Inspect","acceptance":"Capture results","dependencies":[],"estimateSeconds":60}]})),
         operation("run", "continuous_planning", json!({"action":"select","version":1,"stepId":"A42"})),
-        message("run-dispatch", "*** Begin Messages\n*** Message To: Implementer\n+Run echo supervisor-native-evidence and report its actual output.\n*** Message To: User\n+I am checking the result.\n*** End Messages"),
-        operation("unchecked-accept", "continuous_planning", json!({"action":"accept","version":3,"stepId":"A42","evidence":["Trust the report."]})),
+        message("run-dispatch", "<messages>\n<implementer>\nRun echo supervisor-native-evidence and report its actual output.\n</implementer>\n<user>\nI am checking the result.\n</user>\n</messages>"),
+        operation("unchecked-accept", "continuous_planning", json!({"action":"accept","version":5,"stepId":"A42","evidence":["Trust the report."]})),
         operation("evidence", "continuous_planning", json!({"action":"evidence"})),
-        operation("accept", "continuous_planning", json!({"action":"accept","version":3,"stepId":"A42","evidence":["Verified the recorded command output."]})),
+        operation("accept", "continuous_planning", json!({"action":"accept","version":5,"stepId":"A42","evidence":["Verified the recorded command output."]})),
         message("done", "Verified."),
     ], vec![
+        message("kickoff", "Selected step started."),
         operation("command", "exec_command", json!({"cmd":"echo supervisor-native-evidence","yield_time_ms":1000})),
         message("main-done", "Private execution report."),
     ]).await;
@@ -299,6 +299,11 @@ async fn supervisor_owns_tools_and_accepts_recorded_implementer_evidence() -> Re
     assert!(
         main["input"]
             .to_string()
+            .contains("Objective: Verify a staged task")
+    );
+    assert!(
+        !main["input"]
+            .to_string()
             .contains("Implement the staged task")
     );
     assert!(bodies.iter().any(|body| {
@@ -372,6 +377,107 @@ async fn supervisor_owns_tools_and_accepts_recorded_implementer_evidence() -> Re
 }
 
 #[tokio::test]
+async fn supervisor_fork_restores_the_implementer_pair_after_cold_restart() -> Result<()> {
+    let (server, _) = server(
+        vec![
+            create(),
+            operation(
+                "select",
+                "continuous_planning",
+                json!({"action":"select","version":1,"stepId":"one"}),
+            ),
+            message("supervisor-ready", "Source supervisor ready."),
+            message("supervisor-review", "Source execution report received."),
+        ],
+        vec![message("implementer-report", "Implementer evidence.")],
+    )
+    .await;
+    let home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri())
+        .enable_feature(Feature::ContinuousPlanning)
+        .with_sandbox_mode("danger-full-access")
+        .write(home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .without_managed_config()
+        .build_initialized()
+        .await?;
+
+    let source = start(&mut app, "Run the staged task.").await?;
+    wait_for_text(&mut app, &source.id, "Source supervisor ready.").await?;
+    let request = app
+        .send_raw_request(
+            "thread/supervisor/read",
+            Some(json!({"threadId":source.id})),
+        )
+        .await?;
+    let source_read: ThreadSupervisorReadResponse = app.read_response(request).await?;
+    let source_state = source_read.state.expect("source ownership state");
+    let source_implementer_id = source_state
+        .implementer_thread_id
+        .clone()
+        .expect("source Implementer");
+
+    app.shutdown_gracefully().await?;
+
+    let mut restored = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .without_managed_config()
+        .build_initialized()
+        .await?;
+    let request = restored
+        .send_thread_fork_request(ThreadForkParams {
+            thread_id: source.id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let forked: ThreadForkResponse = restored.read_response(request).await?;
+    assert_eq!(
+        forked.thread.forked_from_id.as_deref(),
+        Some(source.id.as_str())
+    );
+
+    let request = restored
+        .send_raw_request(
+            "thread/supervisor/read",
+            Some(json!({"threadId":forked.thread.id})),
+        )
+        .await?;
+    let forked_read: ThreadSupervisorReadResponse = restored.read_response(request).await?;
+    let forked_state = forked_read.state.expect("forked ownership state");
+    assert!(forked_state.paused);
+    let forked_implementer_id = forked_state
+        .implementer_thread_id
+        .clone()
+        .expect("forked Implementer");
+    assert_ne!(forked_implementer_id, source_implementer_id);
+    assert_eq!(
+        forked_read.plan.expect("forked plan").steps[0].state,
+        PlanStepState::Blocked
+    );
+
+    let request = restored
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: forked_implementer_id,
+            include_turns: true,
+        })
+        .await?;
+    let implementer: ThreadReadResponse = restored.read_response(request).await?;
+    assert_eq!(
+        implementer.thread.forked_from_id,
+        Some(source_implementer_id)
+    );
+    assert_eq!(
+        implementer.thread.parent_thread_id,
+        Some(forked.thread.id.clone())
+    );
+    assert_eq!(implementer.thread.can_accept_direct_input, Some(false));
+
+    restored.shutdown_gracefully().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn supervisor_budget_interrupts_automatic_work_and_survives_readback() -> Result<()> {
     let (server, _) = server(
         vec![
@@ -432,7 +538,7 @@ async fn supervisor_pauses_execution_and_replaces_only_the_implementer_context()
     let (server, pending) = server(vec![
         create(),
         operation("run", "continuous_planning", json!({"action":"select","version":1,"stepId":"one"})),
-        message("run-dispatch", "*** Begin Messages\n*** Message To: Implementer\n+Wait for the prerequisite.\n*** Message To: User\n+Execution started.\n*** End Messages"),
+        message("run-dispatch", "<messages>\n<implementer>\nWait for the prerequisite.\n</implementer>\n<user>\nExecution started.\n</user>\n</messages>"),
     ], vec![
         operation("wait-one", "exec_command", json!({"cmd":if cfg!(windows) { "Start-Sleep -Seconds 30" } else { "sleep 30" },"yield_time_ms":1000})),
         message("first-idle", "Still waiting."),
@@ -479,7 +585,7 @@ async fn supervisor_pauses_execution_and_replaces_only_the_implementer_context()
     pending.lock().expect("script").extend([
         operation("replace", "continuous_planning", json!({"action":"replace"})),
         operation("resume", "continuous_planning", json!({"action":"resume"})),
-        message("replacement-dispatch", "*** Begin Messages\n*** Message To: Implementer\n+The prerequisite remains unavailable. Continue waiting for the prerequisite.\n*** Message To: User\n+Execution context refreshed.\n*** End Messages"),
+        message("replacement-dispatch", "<messages>\n<implementer>\nThe prerequisite remains unavailable. Continue waiting for the prerequisite.\n</implementer>\n<user>\nExecution context refreshed.\n</user>\n</messages>"),
     ]);
     let request = app.send_raw_request("turn/start", Some(json!({"threadId":thread.id,"input":[{"type":"text","text":"Refresh the execution context and continue.","textElements":[]}]}))).await?;
     let _: TurnStartResponse = app.read_response(request).await?;
@@ -538,7 +644,7 @@ async fn supervisor_routes_implementer_approval_and_resolution_to_the_user_conve
     let (server, _) = server(vec![
         create(),
         operation("run", "continuous_planning", json!({"action":"select","version":1,"stepId":"one"})),
-        message("run-dispatch", "*** Begin Messages\n*** Message To: Implementer\n+Run the authorized command with the required approval.\n*** Message To: User\n+I will check the command result.\n*** End Messages"),
+        message("run-dispatch", "<messages>\n<implementer>\nRun the authorized command with the required approval.\n</implementer>\n<user>\nI will check the command result.\n</user>\n</messages>"),
         operation("evidence", "continuous_planning", json!({"action":"evidence"})),
         operation("accept", "continuous_planning", json!({"action":"accept","version":3,"stepId":"one","evidence":["The approved command returned the expected output."]})),
         message("done", "Approved command verified."),
@@ -618,7 +724,7 @@ async fn delegated_subagent_owns_a_supervisor_and_read_only_implementer() -> Res
         ),
         message(
             "root-run-dispatch",
-            "*** Begin Messages\n*** Message To: Implementer\n+delegate-probe-root: delegate the inspection to a subagent.\n*** End Messages",
+            "<messages>\n<implementer>\ndelegate-probe-root: delegate the inspection to a subagent.\n</implementer>\n</messages>",
         ),
     ]));
     let child = Mutex::new(VecDeque::from(vec![
@@ -630,7 +736,7 @@ async fn delegated_subagent_owns_a_supervisor_and_read_only_implementer() -> Res
         ),
         message(
             "child-run-dispatch",
-            "*** Begin Messages\n*** Message To: Implementer\n+Complete the child inspection.\n*** End Messages",
+            "<messages>\n<implementer>\nComplete the child inspection.\n</implementer>\n</messages>",
         ),
     ]));
     let implementer = Mutex::new(VecDeque::from(vec![responses::sse(vec![responses::ev_response_created("delegate"), responses::ev_function_call_with_namespace("delegate", "collaboration", "spawn_agent", &json!({"message":"child-supervision-probe: inspect this task through your Implementer.","task_name":"inspection","fork_turns":"none"}).to_string()), responses::ev_completed("delegate")])]));
@@ -659,8 +765,10 @@ async fn delegated_subagent_owns_a_supervisor_and_read_only_implementer() -> Res
                     .expect("queue")
                     .pop_front()
                     .unwrap_or_else(|| message("delegated", "Waiting for the child Supervisor."))
-            } else {
+            } else if input.contains("Complete the child inspection.") {
                 message("implemented", "child-implementation-complete")
+            } else {
+                message("waiting", "Waiting for evidence.")
             };
             responses::sse_response(
                 if body["tools"]

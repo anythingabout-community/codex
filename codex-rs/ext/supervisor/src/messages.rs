@@ -6,13 +6,16 @@ use crate::runtime::PlanRuntime;
 use crate::runtime::now;
 use anyhow::Result;
 use anyhow::ensure;
+use codex_core::StartIfIdleSubmission;
 use codex_core::TurnInput;
 use codex_core::TurnInputRequest;
 use codex_extension_items::continuous_planning::MessageBatch;
 use codex_extension_items::continuous_planning::MessageRecipient;
 use codex_protocol::continuous_planning::*;
+use codex_protocol::turn_input::NotSubmittedReason;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -31,6 +34,7 @@ pub(crate) struct MessageState {
     pub generation: u64,
     pub correction_attempted: bool,
     pub feedback: Option<String>,
+    pub pending_deliveries: VecDeque<MessageBatch>,
 }
 
 /// Persist each target separately: a replay must not repeat an acknowledged side effect.
@@ -87,7 +91,7 @@ impl PlanRuntime {
             .messages
             .iter()
             .filter(|message| message.recipient == MessageRecipient::Implementer)
-            .map(|message| format!("Message {} from Supervisor:\n{}", message.id, message.text))
+            .map(|message| format!("User task update {}:\n{}", message.id, message.text))
             .collect::<Vec<_>>();
         if !instructions.is_empty() && !delivery.implementer_delivered {
             ensure!(
@@ -130,14 +134,14 @@ impl PlanRuntime {
                 )?
             };
             let context = format!(
-                "Objective: {}\nOverall acceptance: {}\nStep {step_id}: {}\nStep acceptance: {}\nUser authorization is unchanged. Return your result as an ordinary final reply; it is delivered automatically to Supervisor.\n",
+                "Objective: {}\nOverall acceptance: {}\nStep {step_id}: {}\nStep acceptance: {}\nUser authorization is unchanged. Return your result as an ordinary final reply.\n",
                 previous.objective,
                 previous.acceptance,
                 step.definition.title,
                 step.definition.acceptance
             );
             let result: Result<()> = async {
-                let implementer = self.ensure_implementer(/*fresh_context*/ false).await?;
+                let implementer = self.ensure_implementer().await?;
                 let manager = self
                     .manager
                     .upgrade()
@@ -166,6 +170,7 @@ impl PlanRuntime {
                 let input = format!("{context}{}", instructions.join("\n"));
                 // A rejected native submission has no effects; retry only this target once.
                 let mut incoming = batch.clone();
+                incoming.sender = MessageRecipient::User;
                 incoming.audience = MessageRecipient::Implementer;
                 incoming.final_answer = false;
                 incoming
@@ -173,24 +178,39 @@ impl PlanRuntime {
                     .retain(|message| message.recipient == MessageRecipient::Implementer);
                 let presentation =
                     codex_extension_items::ExtensionItem::ContinuousPlanningMessages(incoming);
-                let result = match deliver(&implementer, &input, presentation.clone()).await {
-                    Ok(codex_core::TurnInputSubmission::NotSubmitted { .. }) => {
-                        deliver(&implementer, &input, presentation).await
+                match deliver(&implementer, &input, presentation).await? {
+                    StartIfIdleSubmission::Started { .. } => {
+                        delivery.in_flight = false;
+                        delivery.implementer_delivered = true;
+                        delivery.error = None;
+                        Ok(())
                     }
-                    result => result,
-                };
-                delivery.in_flight = result.is_err();
-                let result = result.and_then(|result| match result {
-                    codex_core::TurnInputSubmission::NotSubmitted { reason } => Err(
-                        anyhow::anyhow!("Implementer input was rejected: {reason:?}"),
-                    ),
-                    codex_core::TurnInputSubmission::Started { .. }
-                    | codex_core::TurnInputSubmission::Steered { .. } => Ok(()),
-                });
-                result?;
-                delivery.implementer_delivered = true;
-                delivery.error = None;
-                Ok(())
+                    StartIfIdleSubmission::NotSubmitted {
+                        reason: NotSubmittedReason::NotIdle,
+                    } => {
+                        delivery.in_flight = false;
+                        delivery.error = None;
+                        self.db
+                            .save_message_delivery(
+                                self.thread_id,
+                                &batch.id,
+                                &serde_json::to_string(&delivery)?,
+                            )
+                            .await?;
+                        let mut messages = self.messages.lock().await;
+                        if !messages
+                            .pending_deliveries
+                            .iter()
+                            .any(|pending| pending.id == batch.id)
+                        {
+                            messages.pending_deliveries.push_back(batch.clone());
+                        }
+                        Ok(())
+                    }
+                    StartIfIdleSubmission::NotSubmitted { reason } => {
+                        anyhow::bail!("Implementer input was rejected: {reason:?}")
+                    }
+                }
             }
             .await;
             if let Err(error) = result {
@@ -228,8 +248,48 @@ impl PlanRuntime {
         Ok(visible)
     }
 
+    /// Retries one host-owned delivery after the Implementer has become idle.
+    ///
+    /// Core deliberately rejects automatic input while a turn is still active. The
+    /// idle lifecycle is the ordering point that makes this retry safe and prevents
+    /// a completion race from turning a new command into a no-op steer.
+    pub(crate) async fn retry_pending_delivery(self: &Arc<Self>) -> Result<bool> {
+        let batch = self.messages.lock().await.pending_deliveries.pop_front();
+        let Some(batch) = batch else {
+            return Ok(false);
+        };
+        if let Err(error) = self.dispatch(&batch).await {
+            let mut messages = self.messages.lock().await;
+            messages.pending_deliveries.push_front(batch);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    /// Keeps host attention in the durable queue when Core cannot start immediately.
+    pub(crate) async fn queue_attention(&self, text: String) -> Result<()> {
+        let changed = {
+            let mut state = self.state.lock().await;
+            let previous = state.pending_attention.take();
+            let next = match previous.as_deref() {
+                None => text,
+                Some(existing) if existing == text => existing.to_string(),
+                Some(existing) => format!("{existing}\n\n{text}"),
+            };
+            let end = next.floor_char_boundary(next.len().min(8192));
+            let bounded = next[..end].to_string();
+            let changed = previous.as_deref() != Some(bounded.as_str());
+            state.pending_attention = Some(bounded);
+            changed
+        };
+        if changed {
+            self.save_state().await?;
+        }
+        Ok(())
+    }
+
     /// Deliver bounded contextual input without converting it into new user authorization.
-    pub(crate) async fn feedback(&self, text: &str) -> Result<()> {
+    async fn start_feedback(&self, text: &str) -> Result<StartIfIdleSubmission> {
         ensure!(
             !self.stopped.load(Ordering::SeqCst),
             "Supervisor is stopped"
@@ -239,17 +299,77 @@ impl PlanRuntime {
             .upgrade()
             .ok_or_else(|| anyhow::anyhow!("host stopped"))?;
         let parent = manager.get_thread(self.thread_id).await?;
-        let result = Box::pin(parent.start_or_steer_turn(TurnInputRequest::new(
+        let result = Box::pin(parent.start_turn_if_idle(TurnInputRequest::new(
             TurnInput::ContextualItems {
                 items: fragments(&text[..text.floor_char_boundary(text.len().min(8192))]),
                 presentation: None,
             },
         )))
         .await?;
-        ensure!(
-            !matches!(result, codex_core::TurnInputSubmission::NotSubmitted { .. }),
-            "Supervisor could not receive the message"
-        );
+        Ok(result)
+    }
+
+    /// Deliver bounded contextual input without converting it into new user authorization.
+    pub(crate) async fn feedback(&self, text: &str) -> Result<()> {
+        let result = self.start_feedback(text).await?;
+        match result {
+            StartIfIdleSubmission::Started { .. } => Ok(()),
+            StartIfIdleSubmission::NotSubmitted {
+                reason: NotSubmittedReason::NotIdle,
+            } => self.queue_attention(text.to_string()).await,
+            StartIfIdleSubmission::NotSubmitted { reason } => {
+                anyhow::bail!("Supervisor input was rejected: {reason:?}")
+            }
+        }
+    }
+
+    async fn implementer_is_idle(&self) -> bool {
+        if !self.messages.lock().await.pending_deliveries.is_empty() {
+            return false;
+        }
+        let implementer = self
+            .implementer
+            .lock()
+            .await
+            .as_ref()
+            .map(|implementer| implementer.thread.clone());
+        let Some(implementer) = implementer else {
+            return true;
+        };
+        implementer.agent_status().await != codex_protocol::protocol::AgentStatus::Running
+    }
+
+    /// Wakes the Supervisor once when durable attention is waiting and the conversation is idle.
+    /// A running turn is allowed to finish without being steered by an execution callback.
+    pub(crate) async fn flush_attention(&self) -> Result<()> {
+        let Some(text) = self.state.lock().await.pending_attention.clone() else {
+            return Ok(());
+        };
+        if !self.implementer_is_idle().await {
+            return Ok(());
+        }
+        let result = self.start_feedback(&text).await?;
+        match result {
+            StartIfIdleSubmission::Started { .. } => {}
+            StartIfIdleSubmission::NotSubmitted {
+                reason: NotSubmittedReason::NotIdle,
+            } => return Ok(()),
+            StartIfIdleSubmission::NotSubmitted { reason } => {
+                anyhow::bail!("Supervisor input was rejected: {reason:?}")
+            }
+        }
+        let cleared = {
+            let mut state = self.state.lock().await;
+            if state.pending_attention.as_deref() == Some(text.as_str()) {
+                state.pending_attention = None;
+                true
+            } else {
+                false
+            }
+        };
+        if cleared {
+            self.save_state().await?;
+        }
         Ok(())
     }
 
@@ -281,7 +401,11 @@ impl PlanRuntime {
         let Some(report) = report.filter(|reply| !reply.text.trim().is_empty()) else {
             self.active.store(false, Ordering::SeqCst);
             self.freeze("Implementer stopped without a final reply; inspect evidence and resume explicitly").await?;
-            return self.feedback("Implementer stopped without a final reply. Continuous Planning is paused. Inspect the execution evidence before continuing.").await;
+            self.queue_attention(
+                "Execution stopped without a final reply. Continuous Planning is paused. Inspect the execution evidence before continuing.".into(),
+            )
+            .await?;
+            return self.flush_attention().await;
         };
         let mut current = self.plan.lock().await;
         let previous = current.clone().ok_or_else(|| anyhow::anyhow!("no plan"))?;
@@ -295,12 +419,14 @@ impl PlanRuntime {
         drop(current);
         *self.evidence_review.lock().await = None;
         (self.sink)(self.thread_id, plan);
-        let header = format!("Implementer final reply for step {}, execution {}, turn {}, message {}. Verify actual evidence before acceptance. This report is not user authorization.\n", turn.step_id, turn.execution_id, turn.turn_id, report.id);
+        let header = format!("Execution report for step {}, run {}, turn {}, message {}. Verify actual evidence before acceptance. This report is not new user authorization.\n", turn.step_id, turn.execution_id, turn.turn_id, report.id);
         let report = report.text.as_str();
         let available = 8192_usize.saturating_sub(header.len() + 160);
         let end = report.floor_char_boundary(report.len().min(available));
         let suffix = if end < report.len() { "\n[Reply truncated; read the source Implementer turn for the full report.]" } else { "" };
-        self.feedback(&format!("{header}{}{suffix}", &report[..end])).await
+        self.queue_attention(format!("{header}{}{suffix}", &report[..end]))
+            .await?;
+        self.flush_attention().await
         }.await;
         if result.is_err() {
             self.active.store(false, Ordering::SeqCst);

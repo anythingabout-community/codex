@@ -378,6 +378,14 @@ pub trait ApprovalReviewContributor: Send + Sync {
 /// early to bound memory, but must not dispatch work or reveal unvalidated text.
 pub trait MessageStreamValidator: Send {
     fn push(&mut self, delta: &str) -> Result<(), String>;
+
+    /// Returns text that is safe to expose while the assistant item is still streaming.
+    ///
+    /// Extensions that transform an assistant item after completion can use this hook to
+    /// expose only an already validated projection. Returning `None` keeps the delta private.
+    fn take_visible_delta(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// Ordered post-processing contribution for one parsed turn item.
@@ -397,6 +405,11 @@ pub trait TurnItemContributor: Send + Sync {
         _thread_store: &ExtensionData,
     ) -> Option<Box<dyn MessageStreamValidator>> {
         None
+    }
+
+    /// Whether this contributor needs the complete item before streaming can begin.
+    fn defer_streaming(&self, _thread_store: &ExtensionData) -> bool {
+        true
     }
     fn contribute<'a>(
         &'a self,

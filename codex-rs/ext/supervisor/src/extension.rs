@@ -75,19 +75,24 @@ impl ThreadLifecycleContributor<Config> for SupervisorExtension {
             };
             let plan_result = self.db.read_thread_plan(thread_id).await;
             let state_result = self.db.read_supervisor(thread_id).await;
-            let restore_error = plan_result.as_ref().err().or_else(|| state_result.as_ref().err())
+            let restore_error = plan_result
+                .as_ref()
+                .err()
+                .or_else(|| state_result.as_ref().err())
                 .map(|error| format!("Cannot restore Continuous Planning state: {error}. The stored data is preserved; execution is disabled."))
-                .or_else(|| (matches!(&plan_result, Ok(Some(_))) && matches!(&state_result, Ok(None))).then(|| "Cannot restore Continuous Planning without its ownership state. The stored plan is preserved; execution is disabled.".to_string()))
-                .or_else(|| (input.session_source.get_agent_role().as_deref() == Some("supervisor_main")).then(|| "Cannot restore the obsolete execution role. The stored data is preserved; execution is disabled.".to_string()));
+                .or_else(|| {
+                    (matches!(&plan_result, Ok(Some(_)))
+                        && matches!(&state_result, Ok(None)))
+                    .then(|| "Cannot restore Continuous Planning without its ownership state. The stored plan is preserved; execution is disabled.".to_string())
+                })
+                .or_else(|| {
+                    (matches!(&plan_result, Ok(None))
+                        && matches!(&state_result, Ok(Some(_))))
+                    .then(|| "Cannot restore Continuous Planning without its plan. The stored ownership state is preserved; execution is disabled.".to_string())
+                });
             let plan = plan_result.ok().flatten();
             let restored = state_result.ok().flatten();
             let mut state = restored.clone().unwrap_or_default();
-            if restored.is_none()
-                && let Ok(Some(goal)) = self.db.thread_goals().get_thread_goal(thread_id).await
-            {
-                state.total_tokens = goal.tokens_used;
-                state.token_budget = goal.token_budget;
-            }
             // Execution runtimes do not survive process restart. Preserve their histories, never offline time.
             state.paused = restored.is_some() || restore_error.is_some();
             input.thread_store.insert(SupervisorSession::Supervisor);
@@ -142,6 +147,29 @@ impl ThreadLifecycleContributor<Config> for SupervisorExtension {
                     tracing::warn!(%error, "Supervisor checkpoint failed");
                 }
                 tokio::spawn(runtime.watch());
+            }
+        })
+    }
+    fn on_thread_idle<'a>(&'a self, input: ThreadIdleInput<'a>) -> ExtensionFuture<'a, ()> {
+        Box::pin(async move {
+            if let Some(binding) = input.thread_store.get::<ImplementerBinding>()
+                && let Some(runtime) = binding.runtime.upgrade()
+            {
+                match runtime.retry_pending_delivery().await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        if let Err(error) = runtime.flush_attention().await {
+                            tracing::warn!(%error, "Supervisor attention delivery failed");
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "Implementer pending delivery retry failed");
+                    }
+                }
+            } else if let Some(runtime) = input.thread_store.get::<PlanRuntime>()
+                && let Err(error) = runtime.flush_attention().await
+            {
+                tracing::warn!(%error, "Supervisor attention delivery failed");
             }
         })
     }
@@ -251,11 +279,9 @@ impl TurnLifecycleContributor for SupervisorExtension {
                             .map(|reply| (*reply).clone())
                     })
                     .flatten();
-                tokio::spawn(async move {
-                    if let Err(error) = runtime.finish_execution(&turn, report.as_ref()).await {
-                        tracing::warn!(%error, "Implementer automatic report failed");
-                    }
-                });
+                if let Err(error) = runtime.finish_execution(&turn, report.as_ref()).await {
+                    tracing::warn!(%error, "Implementer automatic report failed");
+                }
             } else if let Some(runtime) = input.thread_store.get::<PlanRuntime>() {
                 if input.error.is_some_and(|error| {
                     error.message.contains("Continuous Planning message error")
@@ -284,12 +310,21 @@ impl TurnLifecycleContributor for SupervisorExtension {
                 }
                 let feedback = runtime.messages.lock().await.feedback.take();
                 if let Some(feedback) = feedback {
+                    let feedback_runtime = runtime.clone();
                     tokio::spawn(async move {
-                        if let Err(error) = runtime.feedback(&feedback).await {
+                        if let Err(error) = feedback_runtime.feedback(&feedback).await {
                             tracing::warn!(%error, "Supervisor correction delivery failed");
+                        } else if let Err(error) = feedback_runtime.flush_attention().await {
+                            tracing::warn!(%error, "Supervisor correction retry failed");
                         }
                     });
                 }
+                let attention_runtime = runtime.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = attention_runtime.flush_attention().await {
+                        tracing::warn!(%error, "Supervisor attention delivery failed");
+                    }
+                });
             }
         })
     }

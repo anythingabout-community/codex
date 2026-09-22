@@ -35,6 +35,10 @@ impl TurnItemContributor for MessageItems {
             .map(|_| Box::new(MessageParser::default()) as Box<dyn MessageStreamValidator>)
     }
 
+    fn defer_streaming(&self, _thread_store: &ExtensionData) -> bool {
+        false
+    }
+
     fn contribute<'a>(
         &'a self,
         thread_store: &'a ExtensionData,
@@ -113,7 +117,7 @@ impl TurnItemContributor for MessageItems {
                         } else {
                             state.correction_attempted = true;
                             state.feedback = Some(format!(
-                                "{error}. This batch was rejected before any new delivery. Previously accepted deliveries are preserved. Correct the complete batch using *** Begin Messages, *** Message To: User or Implementer, '+' body lines, and *** End Messages. You have one correction attempt."
+                                "{error}. This batch was rejected before any new delivery. Previously accepted deliveries are preserved. Correct the complete document using <messages>, <user> or <implementer> blocks, and </messages>. You have one correction attempt."
                             ));
                             Vec::new()
                         }

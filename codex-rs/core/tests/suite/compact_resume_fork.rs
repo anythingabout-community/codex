@@ -11,6 +11,7 @@ use super::compact::SUMMARY_TEXT;
 use anyhow::Context;
 use anyhow::Result;
 use codex_core::CodexThread;
+use codex_core::ForkSnapshot;
 use codex_core::ThreadManager;
 use codex_core::TurnInputRequest;
 use codex_core::compact::SUMMARIZATION_PROMPT;
@@ -928,7 +929,7 @@ async fn fork_thread(
     nth_user_message: usize,
 ) -> Arc<CodexThread> {
     Box::pin(manager.fork_thread(
-        nth_user_message,
+        ForkSnapshot::TruncateBeforeNthUserMessage(nth_user_message),
         codex_core::StartThreadOptions::new(config.clone()),
         path,
     ))

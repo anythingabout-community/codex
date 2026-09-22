@@ -9,12 +9,17 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export_to = "v2/")]
 pub struct SupervisorState {
-    #[serde(default)]
     #[ts(type = "number")]
     pub revision: i64,
     pub implementer_thread_id: Option<String>,
     pub execution_id: Option<String>,
     pub step_id: Option<String>,
+    /// Project-local Markdown plan maintained by the host.
+    pub plan_path: Option<String>,
+    /// Bounded attention carried independently of the model conversation.
+    pub pending_attention: Option<String>,
+    /// Small host-owned notes that survive context compaction and model restarts.
+    pub memory: Vec<String>,
     pub paused: bool,
     #[ts(type = "number")]
     pub updated_at: i64,

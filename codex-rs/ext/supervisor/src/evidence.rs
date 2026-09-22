@@ -4,17 +4,85 @@ use crate::runtime::PlanRuntime;
 use crate::runtime::now;
 use anyhow::Result;
 use anyhow::ensure;
+use codex_history::RolloutItem;
 use codex_protocol::continuous_planning::*;
 use codex_protocol::models::ResponseItem;
 
 impl PlanRuntime {
-    pub async fn evidence(&self) -> Result<String> {
-        let implementer = self
-            .implementer
+    async fn implementer_id(&self) -> Option<codex_protocol::ThreadId> {
+        self.state
             .lock()
             .await
-            .as_ref()
-            .map(|implementer| implementer.thread.clone());
+            .implementer_thread_id
+            .as_deref()
+            .and_then(|id| codex_protocol::ThreadId::from_string(id).ok())
+    }
+
+    async fn implementer_history(&self) -> Result<Vec<ResponseItem>> {
+        let implementer_id = self
+            .implementer_id()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("no Implementer execution exists"))?;
+        let manager = self
+            .manager
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("host stopped"))?;
+        Ok(manager
+            .read_thread_history(implementer_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to read Implementer history: {error}"))?
+            .into_iter()
+            .filter_map(|item| match item {
+                RolloutItem::ResponseItem(envelope) => Some(envelope.item),
+                _ => None,
+            })
+            .collect())
+    }
+}
+
+impl PlanRuntime {
+    /// Searches the private Implementer history and returns bounded matching records.
+    pub async fn inspect(&self, query: Option<&str>, offset: usize) -> Result<String> {
+        ensure!(offset <= 64 * 1024, "history offset is too large");
+        ensure!(
+            self.implementer_id().await.is_some(),
+            "no Implementer execution exists"
+        );
+        let needle = query.map(str::to_lowercase);
+        let history = self.implementer_history().await?;
+        let mut output = String::new();
+        let mut matched = 0usize;
+        for item in history.into_iter().rev() {
+            let mut value = serde_json::to_value(item)?;
+            if let Some(object) = value.as_object_mut() {
+                object.remove("internal_chat_message_metadata_passthrough");
+            }
+            let text = value.to_string();
+            if needle
+                .as_ref()
+                .is_some_and(|needle| !text.to_lowercase().contains(needle))
+            {
+                continue;
+            }
+            if matched < offset {
+                matched += 1;
+                continue;
+            }
+            if output.len().saturating_add(text.len() + 1) > 8192 {
+                break;
+            }
+            output.push_str(&text);
+            output.push('\n');
+            matched += 1;
+            if matched.saturating_sub(offset) == 32 {
+                break;
+            }
+        }
+        ensure!(!output.is_empty(), "no matching Implementer history");
+        Ok(output)
+    }
+
+    pub async fn evidence(&self) -> Result<String> {
         let version = self
             .plan
             .lock()
@@ -23,7 +91,7 @@ impl PlanRuntime {
             .ok_or_else(|| anyhow::anyhow!("no task"))?
             .version;
         let state = self.state.lock().await.clone();
-        let Some(implementer) = implementer else {
+        if self.implementer_id().await.is_none() {
             let records = self
                 .db
                 .list_supervisor_activity(
@@ -43,9 +111,8 @@ impl PlanRuntime {
             );
             *self.evidence_review.lock().await = Some((version, output.clone()));
             return Ok(output);
-        };
-        let history = implementer.conversation_history_snapshot().await;
-        let items: Vec<_> = history.items().collect();
+        }
+        let items = self.implementer_history().await?;
         let control_calls: std::collections::HashSet<_> = items
             .iter()
             .filter_map(|item| match item {
@@ -142,6 +209,10 @@ impl PlanRuntime {
         self.db.append_thread_plan(self.thread_id, &plan).await?;
         *current = Some(plan.clone());
         (self.sink)(self.thread_id, plan);
-        Ok(())
+        let saved = current
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("plan was lost while accepting the step"))?;
+        drop(current);
+        self.write_plan_file(&saved).await
     }
 }

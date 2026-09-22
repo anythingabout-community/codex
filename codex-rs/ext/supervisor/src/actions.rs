@@ -19,6 +19,15 @@ pub(crate) enum SupervisorAction {
         #[serde(default)]
         offset: usize,
     },
+    Inspect {
+        #[serde(default)]
+        query: Option<String>,
+        #[serde(default)]
+        offset: usize,
+    },
+    Remember {
+        text: String,
+    },
     Create {
         version: i64,
         objective: String,

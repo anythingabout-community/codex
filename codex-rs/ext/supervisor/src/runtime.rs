@@ -8,6 +8,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::continuous_planning::*;
 use codex_protocol::supervisor::SupervisorState;
 use codex_state::StateRuntime;
+use std::fmt::Write as _;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
@@ -81,7 +83,77 @@ impl PlanRuntime {
             *current = Some(plan.clone());
             (self.sink)(self.thread_id, plan.clone());
         }
+        drop(current);
+        self.write_plan_file(&plan).await?;
         Ok(plan)
+    }
+
+    /// Writes the host-owned plan projection where a human can review and edit it between turns.
+    pub(crate) async fn write_plan_file(&self, plan: &ContinuousPlanning) -> Result<()> {
+        let configured_path = self.state.lock().await.plan_path.clone();
+        let path = if let Some(path) = configured_path {
+            PathBuf::from(path)
+        } else {
+            let manager = self
+                .manager
+                .upgrade()
+                .ok_or_else(|| anyhow::anyhow!("host stopped"))?;
+            let thread = manager.get_thread(self.thread_id).await?;
+            let cwd = thread.config().await.cwd.to_path_buf();
+            let path = cwd
+                .join(".agents")
+                .join("plans")
+                .join(format!("continuous-{}.md", plan.id));
+            {
+                let mut state = self.state.lock().await;
+                state.plan_path = Some(path.to_string_lossy().into_owned());
+            }
+            self.save_state().await?;
+            path
+        };
+        let mut markdown = String::new();
+        let _ = writeln!(markdown, "# Continuous Plan");
+        let _ = writeln!(markdown, "\n- **Plan ID:** `{}`", plan.id);
+        let _ = writeln!(markdown, "- **Revision:** {}", plan.version);
+        let _ = writeln!(markdown, "- **Updated:** {}", plan.updated_at);
+        let _ = writeln!(markdown, "\n## Objective\n\n{}", plan.objective);
+        let _ = writeln!(markdown, "\n## Acceptance\n\n{}", plan.acceptance);
+        let _ = writeln!(markdown, "\n## Current Reason\n\n{}", plan.reason);
+        for stage in &plan.stages {
+            let _ = writeln!(markdown, "\n## {} ({})", stage.title, stage.id);
+            let _ = writeln!(markdown, "\n{}", stage.acceptance);
+            for step in plan
+                .steps
+                .iter()
+                .filter(|step| step.definition.stage_id == stage.id)
+            {
+                let marker = match step.state {
+                    PlanStepState::Completed => "x",
+                    PlanStepState::Cancelled => "-",
+                    _ => " ",
+                };
+                let _ = writeln!(
+                    markdown,
+                    "\n- [{}] `{}` **{:?}**: {}\n  - Acceptance: {}\n  - Estimate: {} seconds\n  - Dependencies: {}",
+                    marker,
+                    step.definition.id,
+                    step.state,
+                    step.definition.title,
+                    step.definition.acceptance,
+                    step.definition.estimate_seconds,
+                    if step.definition.dependencies.is_empty() {
+                        "none".to_string()
+                    } else {
+                        step.definition.dependencies.join(", ")
+                    }
+                );
+            }
+        }
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&path, markdown).await?;
+        Ok(())
     }
 
     #[expect(
@@ -118,8 +190,13 @@ impl PlanRuntime {
         let text = format!(
             "Supervisor execution update: {reason}. Inspect Continuous Planning and execution evidence. This is host context, not new user authorization."
         );
-        self.feedback(&text).await?;
-        Ok(())
+        let mut state = self.state.lock().await;
+        if state.pending_attention.is_none() {
+            state.pending_attention = Some(text);
+        }
+        drop(state);
+        self.save_state().await?;
+        self.flush_attention().await
     }
 
     pub async fn watch(self: Arc<Self>) {
@@ -134,7 +211,7 @@ impl PlanRuntime {
             let Some(plan) = snapshot else { continue };
             let timestamp = now();
             let due = plan.next_review_at <= timestamp
-                && timestamp - self.notified_at.load(Ordering::SeqCst) >= 60
+                && timestamp - self.notified_at.load(Ordering::SeqCst) >= 300
                 && plan
                     .steps
                     .iter()

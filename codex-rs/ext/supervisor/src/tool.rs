@@ -15,7 +15,7 @@ impl<'call> ToolExecutor<ToolCall<'call>> for SupervisorTool {
     fn spec(&self) -> ToolSpec {
         specification::<SupervisorAction>(
             "continuous_planning",
-            "Manage Continuous Planning: create or revise the staged plan, select a step, pause/resume execution, replace the Implementer context, inspect evidence, and accept verified work. Select does not start execution. Send instructions in ordinary message batches, never through tools. Use current versions for mutations. Reports arrive automatically; read evidence before acceptance.",
+            "Manage Continuous Planning: create or revise the staged plan, select a step and start it, pause/resume execution, replace the Implementer context, inspect or search private execution history, keep bounded task memory, and accept verified work. Use current versions for mutations. Reports arrive automatically; read evidence before acceptance.",
         )
     }
     fn handle<'a>(&'a self, call: ToolCall<'call>) -> ToolExecutorFuture<'a>
@@ -50,14 +50,8 @@ impl SupervisorTool {
             SupervisorAction::Read { offset } => {
                 let plan = runtime.plan.lock().await.clone();
                 let state = runtime.state.lock().await.clone();
-                let legacy_goal = if plan.is_none() {
-                    runtime.db.thread_goals().get_thread_goal(runtime.thread_id).await?.map(|goal| json!({"objective":goal.objective, "elapsedSeconds":goal.time_used_seconds, "tokensUsed":goal.tokens_used, "tokenBudget":goal.token_budget}))
-                } else {
-                    None
-                };
                 return page(
-                    &json!({ "task": plan, "execution": state, "legacyGoal": legacy_goal })
-                        .to_string(),
+                    &json!({ "task": plan, "execution": state }).to_string(),
                     offset,
                 );
             }
@@ -75,6 +69,25 @@ impl SupervisorTool {
                         .clone()
                 };
                 return page(&evidence, offset);
+            }
+            SupervisorAction::Inspect { query, offset } => {
+                let history = runtime.inspect(query.as_deref(), offset).await?;
+                return page(&history, 0);
+            }
+            SupervisorAction::Remember { text } => {
+                anyhow::ensure!(
+                    !text.trim().is_empty() && text.len() <= 1024,
+                    "memory note must be 1–1024 bytes"
+                );
+                {
+                    let mut state = runtime.state.lock().await;
+                    state.memory.push(text);
+                    if state.memory.len() > 16 {
+                        let excess = state.memory.len() - 16;
+                        state.memory.drain(..excess);
+                    }
+                }
+                runtime.save_state().await?;
             }
             SupervisorAction::Create {
                 version,

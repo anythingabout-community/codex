@@ -200,14 +200,6 @@ struct ForkHistory {
     persistence: ForkPersistence,
 }
 
-/// Preserve legacy `fork_thread(usize, ...)` callsites by mapping them to the
-/// existing truncate-before-nth-user-message snapshot mode.
-impl From<usize> for ForkSnapshot {
-    fn from(value: usize) -> Self {
-        Self::TruncateBeforeNthUserMessage(value)
-    }
-}
-
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ThreadShutdownReport {
     pub completed: Vec<ThreadId>,
@@ -848,6 +840,25 @@ impl ThreadManager {
         self.state.get_thread(thread_id).await
     }
 
+    /// Reads persisted rollout history for a loaded or cold thread.
+    ///
+    /// Callers that need targeted inspection can use this without loading a cold thread into the
+    /// live-thread registry or exposing the complete conversation to a model.
+    pub async fn read_thread_history(&self, thread_id: ThreadId) -> CodexResult<Vec<RolloutItem>> {
+        if let Ok(thread) = self.get_thread(thread_id).await {
+            thread.ensure_rollout_materialized().await;
+            thread.flush_rollout().await?;
+        }
+        Ok(self
+            .state
+            .load_latest_model_context(LoadThreadHistoryParams {
+                thread_id,
+                include_archived: true,
+            })
+            .await?
+            .items)
+    }
+
     /// Updates metadata for loaded and cold threads through one entrypoint.
     ///
     /// Loaded threads route through `CodexThread`/`LiveThread`, so metadata changes stay ordered
@@ -968,7 +979,10 @@ impl ThreadManager {
     }
 
     pub async fn start_thread(&self, options: StartThreadOptions) -> CodexResult<NewThread> {
-        Box::pin(self.start_thread_inner(options, /*forked_from_thread_id*/ None)).await
+        Box::pin(self.start_thread_inner(
+            options, /*forked_from_thread_id*/ None, /*parent_thread_id*/ None,
+        ))
+        .await
     }
 
     /// Starts a fresh internal session associated with an existing parent thread.
@@ -1088,6 +1102,7 @@ impl ThreadManager {
         &self,
         mut options: StartThreadOptions,
         forked_from_thread_id: Option<ThreadId>,
+        parent_thread_id: Option<ThreadId>,
     ) -> CodexResult<NewThread> {
         let agent_control = self.agent_control_for_config(&options.config);
         let (resumed_session_source, resumed_thread_source) = options
@@ -1104,6 +1119,7 @@ impl ThreadManager {
         let mut request =
             ThreadSpawnRequest::new(options, Arc::clone(&self.state.auth_manager), agent_control);
         request.forked_from_thread_id = forked_from_thread_id;
+        request.parent_thread_id = parent_thread_id;
         Box::pin(self.state.spawn_thread(request)).await
     }
 
@@ -1120,7 +1136,7 @@ impl ThreadManager {
         fork_source.flush_rollout().await?;
         let stored_thread = fork_source
             .read_thread(
-                /*include_archived*/ true, /*include_history*/ true,
+                /*include_archived*/ true, /*include_history*/ false,
             )
             .await
             .map_err(|err| {
@@ -1128,7 +1144,18 @@ impl ThreadManager {
                     "failed to read subagent fork source {forked_from_thread_id}: {err}"
                 ))
             })?;
-        let history = stored_thread_to_initial_history(stored_thread, fork_source.rollout_path())?;
+        let history = self
+            .state
+            .load_latest_model_context(LoadThreadHistoryParams {
+                thread_id: forked_from_thread_id,
+                include_archived: true,
+            })
+            .await?;
+        let history = InitialHistory::Resumed(ResumedHistory {
+            conversation_id: stored_thread.thread_id,
+            history: Arc::new(history.items),
+            rollout_path: fork_source.rollout_path().or(stored_thread.rollout_path),
+        });
         let inherited_multi_agent_version = fork_source
             .multi_agent_version()
             .unwrap_or(MultiAgentVersion::V1);
@@ -1140,8 +1167,79 @@ impl ThreadManager {
                 inherited_multi_agent_version,
             ),
         );
-        self.start_thread_inner(options, Some(forked_from_thread_id))
+        self.start_thread_inner(
+            options,
+            Some(forked_from_thread_id),
+            /*parent_thread_id*/ None,
+        )
+        .await
+    }
+
+    /// Spawn a subagent by forking persisted history while assigning a separate parent thread.
+    ///
+    /// This is used when a host-owned child belongs to a newly forked parent rather than to the
+    /// thread whose history supplies the child context.
+    pub async fn spawn_subagent_with_parent(
+        &self,
+        forked_from_thread_id: ThreadId,
+        parent_thread_id: ThreadId,
+        mut options: StartThreadOptions,
+    ) -> CodexResult<NewThread> {
+        let parent = self.get_thread(parent_thread_id).await?;
+        let environments = parent.session.services.turn_environments.snapshot().await;
+        options.environments = Some(environments.to_selections());
+        options.inherited_environments = Some(environments);
+        options.client_mcp_extensions = parent.client_mcp_extensions();
+        if let Ok(fork_source) = self.get_thread(forked_from_thread_id).await {
+            fork_source.ensure_rollout_materialized().await;
+            fork_source.flush_rollout().await?;
+        }
+        let stored_thread = self
+            .state
+            .read_stored_thread(ReadThreadParams {
+                thread_id: forked_from_thread_id,
+                include_archived: true,
+                include_history: false,
+            })
             .await
+            .map_err(|err| {
+                CodexErr::Fatal(format!(
+                    "failed to read subagent fork source {forked_from_thread_id}: {err}"
+                ))
+            })?;
+        let history = self
+            .state
+            .load_latest_model_context(LoadThreadHistoryParams {
+                thread_id: forked_from_thread_id,
+                include_archived: true,
+            })
+            .await?;
+        let history = InitialHistory::Resumed(ResumedHistory {
+            conversation_id: stored_thread.thread_id,
+            history: Arc::new(history.items),
+            rollout_path: stored_thread.rollout_path,
+        });
+        let inherited_multi_agent_version = history
+            .get_multi_agent_version()
+            .unwrap_or(MultiAgentVersion::V1);
+        options.initial_history = fork_history_from_snapshot(
+            ForkSnapshot::Interrupted,
+            history,
+            InterruptedTurnHistoryMarker::from_config_and_version(
+                &options.config,
+                inherited_multi_agent_version,
+            ),
+        );
+        let agent_control = self.agent_control_for_config(&options.config);
+        let mut request = ThreadSpawnRequest::new(
+            options,
+            parent.session.services.auth_manager.clone(),
+            agent_control,
+        );
+        request.forked_from_thread_id = Some(forked_from_thread_id);
+        request.parent_thread_id = Some(parent_thread_id);
+        request.inherited_exec_policy = Some(parent.session.services.exec_policy.clone());
+        Box::pin(self.state.spawn_thread(request)).await
     }
 
     pub async fn resume_thread_from_rollout(
@@ -1375,16 +1473,12 @@ impl ThreadManager {
     /// `snapshot` and starting a new thread with identical configuration
     /// (unless overridden by the caller's options). The new thread has a fresh id.
     /// Fork history replaces `options.initial_history`.
-    pub async fn fork_thread<S>(
+    pub async fn fork_thread(
         &self,
-        snapshot: S,
+        snapshot: ForkSnapshot,
         options: StartThreadOptions,
         path: PathBuf,
-    ) -> CodexResult<NewThread>
-    where
-        S: Into<ForkSnapshot>,
-    {
-        let snapshot = snapshot.into();
+    ) -> CodexResult<NewThread> {
         let history = self.initial_history_from_rollout_path(path).await?;
         self.fork_thread_from_history(snapshot, options, history)
             .await
@@ -1409,19 +1503,16 @@ impl ThreadManager {
     }
 
     /// Fork an existing thread from already-loaded store history.
-    pub async fn fork_thread_from_history<S>(
+    pub async fn fork_thread_from_history(
         &self,
-        snapshot: S,
+        snapshot: ForkSnapshot,
         options: StartThreadOptions,
         history: InitialHistory,
-    ) -> CodexResult<NewThread>
-    where
-        S: Into<ForkSnapshot>,
-    {
+    ) -> CodexResult<NewThread> {
         self.fork_thread_with_initial_history(
             options,
             ForkHistory {
-                snapshot: snapshot.into(),
+                snapshot,
                 initial_history: history,
                 persistence: ForkPersistence::Copied,
             },

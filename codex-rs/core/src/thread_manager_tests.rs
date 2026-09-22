@@ -543,19 +543,6 @@ fn out_of_range_truncation_drops_only_unfinished_suffix_mid_turn() {
 }
 
 #[test]
-fn fork_thread_accepts_legacy_usize_snapshot_argument() {
-    fn assert_legacy_snapshot_callsite(
-        manager: &ThreadManager,
-        config: Config,
-        path: std::path::PathBuf,
-    ) {
-        let _future = manager.fork_thread(usize::MAX, crate::StartThreadOptions::new(config), path);
-    }
-
-    let _: fn(&ThreadManager, Config, std::path::PathBuf) = assert_legacy_snapshot_callsite;
-}
-
-#[test]
 fn out_of_range_truncation_drops_pre_user_active_turn_prefix() {
     let items = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),

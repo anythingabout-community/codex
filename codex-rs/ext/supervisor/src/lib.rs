@@ -4,6 +4,7 @@ mod actions;
 mod control;
 mod evidence;
 mod extension;
+mod fork;
 mod instructions;
 mod message_items;
 mod message_parser;
@@ -13,10 +14,10 @@ mod runtime;
 mod tool;
 
 pub use extension::install;
+pub use fork::fork_supervisor;
 pub use runtime::ImplementerBinding;
 pub use runtime::PlanUpdateSink;
 pub use runtime::SupervisorUpdateSink;
-
 /// Pauses the whole task even while the Supervisor conversation itself is idle.
 pub async fn suspend(thread: &codex_core::CodexThread) -> anyhow::Result<()> {
     if let Some(runtime) = thread.thread_extension_data().get::<runtime::PlanRuntime>() {

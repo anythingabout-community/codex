@@ -680,6 +680,10 @@ impl CodexThread {
         self.session_configured.clone()
     }
 
+    pub fn session_source(&self) -> &SessionSource {
+        &self.session_source
+    }
+
     pub(crate) fn is_running(&self) -> bool {
         !self.io.tx_sub.is_closed()
     }

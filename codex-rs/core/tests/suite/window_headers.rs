@@ -1,6 +1,7 @@
 use super::compact::COMPACT_WARNING_MESSAGE;
 use anyhow::Result;
 use codex_core::CodexThread;
+use codex_core::ForkSnapshot;
 use codex_core::TurnInputRequest;
 use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_protocol::protocol::EventMsg;
@@ -68,7 +69,7 @@ async fn window_id_advances_after_compact_persists_on_resume_and_resets_on_fork(
     let forked = resumed
         .thread_manager
         .fork_thread(
-            /*snapshot*/ 0usize,
+            /*snapshot*/ ForkSnapshot::TruncateBeforeNthUserMessage(0),
             codex_core::StartThreadOptions::new(resumed.config.clone()),
             rollout_path,
         )

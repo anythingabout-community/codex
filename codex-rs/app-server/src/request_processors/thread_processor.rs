@@ -5224,6 +5224,14 @@ impl ThreadRequestProcessor {
             }
         };
 
+        if codex_supervisor_extension::is_supervisor(forked_thread.as_ref()) {
+            codex_supervisor_extension::fork_supervisor(source_thread_id, forked_thread.as_ref())
+                .await
+                .map_err(|err| {
+                    internal_error(format!("failed to fork Supervisor execution: {err}"))
+                })?;
+        }
+
         Self::set_app_server_client_info(
             forked_thread.as_ref(),
             app_server_client_name,

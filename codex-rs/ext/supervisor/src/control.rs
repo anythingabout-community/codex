@@ -7,6 +7,7 @@ use crate::runtime::now;
 use anyhow::Result;
 use anyhow::ensure;
 use codex_core::CodexThread;
+use codex_core::StartIfIdleSubmission;
 use codex_core::StartThreadOptions;
 use codex_core::TurnInput;
 use codex_core::TurnInputRequest;
@@ -21,11 +22,120 @@ use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::supervisor::SupervisorState;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 impl PlanRuntime {
-    /// Select a validated step without starting the Implementer or its timer.
+    pub(crate) async fn adopt_fork_snapshot(
+        self: &Arc<Self>,
+        plan: Option<ContinuousPlanning>,
+        mut state: SupervisorState,
+        source_implementer: Option<ThreadId>,
+    ) -> Result<()> {
+        state.implementer_thread_id = None;
+        state.execution_id = None;
+        state.plan_path = None;
+        state.pending_attention = None;
+        state.paused = true;
+        self.active.store(false, Ordering::SeqCst);
+        *self.state.lock().await = state;
+        if let Some(mut plan) = plan {
+            plan.id = self.thread_id.to_string();
+            plan.version = 1;
+            let timestamp = now();
+            for step in &mut plan.steps {
+                if step.running_since.is_some() {
+                    step.elapsed_seconds = step.elapsed_at(timestamp);
+                }
+                if matches!(
+                    step.state,
+                    PlanStepState::Running | PlanStepState::Reviewing
+                ) {
+                    step.running_since = None;
+                    step.state = PlanStepState::Blocked;
+                }
+            }
+            plan.updated_at = timestamp;
+            plan.next_review_at = timestamp;
+            if plan
+                .steps
+                .iter()
+                .any(|step| step.state == PlanStepState::Blocked)
+            {
+                plan.review = PlanReviewState::Due;
+            }
+            plan.reason = "Forked from the source Supervisor; resume explicitly".into();
+            self.db.append_thread_plan(self.thread_id, &plan).await?;
+            *self.plan.lock().await = Some(plan.clone());
+            (self.sink)(self.thread_id, plan.clone());
+            self.write_plan_file(&plan).await?;
+        }
+        self.save_state().await?;
+        if let Some(source_id) = source_implementer {
+            self.fork_implementer_from(source_id).await?;
+            self.state.lock().await.paused = true;
+            self.active.store(false, Ordering::SeqCst);
+            self.save_state().await?;
+        }
+        Ok(())
+    }
+
+    async fn fork_implementer_from(self: &Arc<Self>, source_id: ThreadId) -> Result<()> {
+        let manager = self
+            .manager
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("host stopped"))?;
+        let parent = manager.get_thread(self.thread_id).await?;
+        let mut config = parent.config().await.as_ref().clone();
+        config.agent_max_depth = config.agent_max_depth.saturating_add(1);
+        config.features.disable(Feature::Goals)?;
+        config.update_plan_enabled = false;
+        config.experimental_request_user_input_enabled = false;
+        let execution_id = ThreadId::new().to_string();
+        let source_config = parent.session_source();
+        let agent_path = source_config
+            .get_agent_path()
+            .unwrap_or_else(codex_protocol::AgentPath::root)
+            .join("implementer")
+            .map_err(anyhow::Error::msg)?;
+        let depth = match source_config {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) => depth + 1,
+            _ => 1,
+        };
+        let mut options = StartThreadOptions::new(config);
+        options.history_mode = Some(codex_protocol::protocol::ThreadHistoryMode::Paginated);
+        options.session_source = Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id: self.thread_id,
+            depth,
+            agent_path: Some(agent_path),
+            agent_nickname: None,
+            agent_role: Some("implementer".to_string()),
+        }));
+        options
+            .thread_extension_init
+            .insert(SupervisorSession::Implementer);
+        options.thread_extension_init.insert(ImplementerBinding {
+            runtime: Arc::downgrade(self),
+            execution_id: execution_id.clone(),
+            turn_steps: tokio::sync::Mutex::new(std::collections::VecDeque::new()),
+        });
+        let spawned = manager
+            .spawn_subagent_with_parent(source_id, self.thread_id, options)
+            .await?;
+        {
+            let mut state = self.state.lock().await;
+            state.implementer_thread_id = Some(spawned.thread_id.to_string());
+            state.execution_id = Some(execution_id.clone());
+        }
+        *self.implementer.lock().await = Some(Implementer {
+            thread: spawned.thread,
+            execution_id,
+        });
+        Ok(())
+    }
+
+    /// Select a validated step and immediately hand it to the Implementer.
     #[expect(
         clippy::await_holding_invalid_type,
         reason = "selection serializes with dispatch"
@@ -42,7 +152,7 @@ impl PlanRuntime {
                 "pause the Implementer before selecting another step"
             );
         }
-        crate::model::apply(
+        let next = crate::model::apply(
             self.plan.lock().await.clone(),
             PlanActionRequest {
                 version,
@@ -53,7 +163,7 @@ impl PlanRuntime {
             &self.thread_id.to_string(),
             now(),
         )?;
-        {
+        let should_start = {
             let mut state = self.state.lock().await;
             ensure!(
                 state
@@ -61,18 +171,95 @@ impl PlanRuntime {
                     .is_none_or(|budget| state.total_tokens < budget),
                 "task token budget reached; ask the user before increasing it"
             );
-            state.step_id = Some(step_id);
-            // Selection is not an implicit resume of an explicitly paused execution.
-            self.active.store(!state.paused, Ordering::SeqCst);
+            state.step_id = Some(step_id.clone());
+            let should_start = !state.paused;
+            self.active.store(should_start, Ordering::SeqCst);
+            should_start
+        };
+        {
+            let mut plan = self.plan.lock().await;
+            if plan
+                .as_ref()
+                .is_none_or(|current| current.version != next.version)
+            {
+                self.db.append_thread_plan(self.thread_id, &next).await?;
+                *plan = Some(next.clone());
+                (self.sink)(self.thread_id, next.clone());
+            }
         }
         *self.evidence_review.lock().await = None;
-        self.save_state().await
+        self.save_state().await?;
+        self.write_plan_file(&next).await?;
+        if should_start {
+            let result = self.start_selected_step(&step_id).await;
+            if let Err(error) = &result {
+                self.active.store(false, Ordering::SeqCst);
+                let _ = self
+                    .freeze("automatic Implementer kickoff failed; inspect and resume explicitly")
+                    .await;
+                return Err(anyhow::anyhow!("{error}"));
+            }
+            Ok(())
+        } else {
+            Ok(())
+        }
     }
 
-    pub(crate) async fn ensure_implementer(
-        self: &Arc<Self>,
-        fresh_context: bool,
-    ) -> Result<Arc<CodexThread>> {
+    async fn start_selected_step(self: &Arc<Self>, step_id: &str) -> Result<()> {
+        let implementer = self.ensure_implementer().await?;
+        // Persist ownership before the first execution request so a restart cannot lose the
+        // Implementer identity after the step has already been admitted.
+        self.save_state().await?;
+        let plan = self
+            .plan
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("create a plan first"))?;
+        let step = plan
+            .steps
+            .iter()
+            .find(|step| step.definition.id == step_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown selected step"))?;
+        let input = format!(
+            "Objective: {}\nOverall acceptance: {}\nCurrent step {}: {}\nStep acceptance: {}\nBegin this step now. Work autonomously and return the actual result and evidence in your final reply.\n",
+            plan.objective,
+            plan.acceptance,
+            step_id,
+            step.definition.title,
+            step.definition.acceptance,
+        );
+        let message = codex_extension_items::continuous_planning::MessageBatch {
+            id: format!("plan:{}:{step_id}", plan.version),
+            sender: codex_extension_items::continuous_planning::MessageRecipient::User,
+            audience: codex_extension_items::continuous_planning::MessageRecipient::Implementer,
+            messages: vec![
+                codex_extension_items::continuous_planning::DirectedMessage {
+                    id: format!("plan:{}:{step_id}:1", plan.version),
+                    recipient:
+                        codex_extension_items::continuous_planning::MessageRecipient::Implementer,
+                    text: "Begin the selected step and return the actual result and evidence."
+                        .into(),
+                },
+            ],
+            final_answer: false,
+        };
+        let result = crate::control::deliver(
+            &implementer,
+            &input,
+            codex_extension_items::ExtensionItem::ContinuousPlanningMessages(message),
+        )
+        .await?;
+        match result {
+            StartIfIdleSubmission::Started { .. } => Ok(()),
+            StartIfIdleSubmission::NotSubmitted { reason } => {
+                self.active.store(false, Ordering::SeqCst);
+                anyhow::bail!("Implementer kickoff was rejected: {reason:?}")
+            }
+        }
+    }
+
+    pub(crate) async fn ensure_implementer(self: &Arc<Self>) -> Result<Arc<CodexThread>> {
         if let Some(implementer) = self.implementer.lock().await.as_ref() {
             return Ok(implementer.thread.clone());
         }
@@ -89,11 +276,9 @@ impl PlanRuntime {
         config.experimental_request_user_input_enabled = false;
         let mut options = StartThreadOptions::new(config);
         options.history_mode = Some(codex_protocol::protocol::ThreadHistoryMode::Paginated);
-        if fresh_context {
-            options.initial_history = InitialHistory::Forked(Vec::new());
-        }
+        options.initial_history = InitialHistory::Forked(Vec::new());
         // Implementers share the existing child conversation lifecycle and navigation.
-        let source = parent.config_snapshot().await.session_source;
+        let source = parent.session_source();
         let agent_path = source
             .get_agent_path()
             .unwrap_or_else(codex_protocol::AgentPath::root)
@@ -201,6 +386,11 @@ impl PlanRuntime {
             for step in &mut plan.steps {
                 if step.running_since.is_some() {
                     step.elapsed_seconds = step.elapsed_at(timestamp);
+                }
+                if matches!(
+                    step.state,
+                    PlanStepState::Running | PlanStepState::Reviewing
+                ) {
                     step.running_since = None;
                     step.state = PlanStepState::Blocked;
                 }
@@ -214,7 +404,11 @@ impl PlanRuntime {
         drop(current);
         self.messages.lock().await.generation += 1;
         self.state.lock().await.paused = true;
-        self.save_state().await
+        self.save_state().await?;
+        if let Some(plan) = self.plan.lock().await.clone() {
+            self.write_plan_file(&plan).await?;
+        }
+        Ok(())
     }
 
     #[expect(
@@ -261,7 +455,7 @@ impl PlanRuntime {
         }
         self.implementer.lock().await.take();
         self.freeze("Implementer context replaced").await?;
-        self.ensure_implementer(/*fresh_context*/ true).await?;
+        self.ensure_implementer().await?;
         self.save_state().await
     }
 
@@ -301,8 +495,12 @@ impl PlanRuntime {
         self.db.append_thread_plan(self.thread_id, &next).await?;
         *current = Some(next.clone());
         (self.sink)(self.thread_id, next);
+        let saved = current
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("plan was lost while cancelling the step"))?;
         drop(current);
-        self.save_state().await
+        self.save_state().await?;
+        self.write_plan_file(&saved).await
     }
 }
 
@@ -336,13 +534,12 @@ pub(crate) async fn deliver(
     thread: &CodexThread,
     text: &str,
     presentation: codex_extension_items::ExtensionItem,
-) -> Result<codex_core::TurnInputSubmission> {
-    let result = Box::pin(thread.start_or_steer_turn(TurnInputRequest::new(
-        TurnInput::ContextualItems {
+) -> Result<StartIfIdleSubmission> {
+    Ok(Box::pin(
+        thread.start_turn_if_idle(TurnInputRequest::new(TurnInput::ContextualItems {
             items: fragments(text),
             presentation: Some(presentation),
-        },
-    )))
-    .await?;
-    Ok(result)
+        })),
+    )
+    .await?)
 }

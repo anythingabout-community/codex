@@ -18572,11 +18572,31 @@
             "null"
           ]
         },
+        "memory": {
+          "description": "Small host-owned notes that survive context compaction and model restarts.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "paused": {
           "type": "boolean"
         },
+        "pendingAttention": {
+          "description": "Bounded attention carried independently of the model conversation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planPath": {
+          "description": "Project-local Markdown plan maintained by the host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "revision": {
-          "default": 0,
           "format": "int64",
           "type": "integer"
         },
@@ -18604,7 +18624,9 @@
       },
       "required": [
         "activitySequence",
+        "memory",
         "paused",
+        "revision",
         "totalTokens",
         "updatedAt"
       ],

@@ -2487,7 +2487,9 @@ async fn try_run_sampling_request(
         .iter()
         .filter(|contributor| contributor.enabled_for(&sess.services.thread_extension_data))
         .collect();
-    let defer_streamed_turn_items_for_contributors = !output_contributors.is_empty();
+    let defer_streamed_turn_items_for_contributors = output_contributors
+        .iter()
+        .any(|contributor| contributor.defer_streaming(&sess.services.thread_extension_data));
     let mut message_validators: Vec<Box<dyn codex_extension_api::MessageStreamValidator>> =
         Vec::new();
     let mut active_item_is_streaming_to_client = false;
@@ -2690,6 +2692,7 @@ async fn try_run_sampling_request(
                     let mut seeded_parsed: Option<ParsedAssistantTextDelta> = None;
                     let mut seeded_item_id: Option<String> = None;
                     if stream_item_to_client
+                        && message_validators.is_empty()
                         && matches!(turn_item, TurnItem::AgentMessage(_))
                         && let Some(raw_text) = raw_assistant_output_text_from_item(&item)
                     {
@@ -2841,12 +2844,32 @@ async fn try_run_sampling_request(
                 });
             }
             ResponseEvent::OutputTextDelta(delta) => {
-                if let Err(error) = message_validators
-                    .iter_mut()
-                    .try_for_each(|validator| validator.push(&delta))
-                {
+                let mut visible_delta = if message_validators.is_empty() {
+                    Some(delta.clone())
+                } else {
+                    None
+                };
+                let mut validation_error = None;
+                for validator in &mut message_validators {
+                    if let Err(error) = validator.push(&delta) {
+                        validation_error = Some(error);
+                        break;
+                    }
+                    let projection = validator.take_visible_delta().unwrap_or_default();
+                    visible_delta = Some(match visible_delta {
+                        Some(previous) if !previous.is_empty() && !projection.is_empty() => {
+                            projection
+                        }
+                        Some(previous) if !previous.is_empty() => previous,
+                        _ => projection,
+                    });
+                }
+                if let Some(error) = validation_error {
                     break Err(CodexErr::InvalidRequest(error));
                 }
+                let Some(delta) = visible_delta.filter(|delta| !delta.is_empty()) else {
+                    continue;
+                };
                 // In review child threads, suppress assistant text deltas; the
                 // UI will show a selection popup from the final ReviewOutput.
                 if let Some(active) = active_item.as_ref() {

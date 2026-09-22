@@ -299,7 +299,7 @@ fn validate(plan: &ContinuousPlanning) -> Result<()> {
     }
     let mut ids = HashSet::new();
     let mut previous_stage = 0;
-    for step in &plan.steps {
+    for (index, step) in plan.steps.iter().enumerate() {
         let definition = &step.definition;
         ensure!(stages.contains(&definition.stage_id), "unknown stage");
         let stage = plan
@@ -318,6 +318,19 @@ fn validate(plan: &ContinuousPlanning) -> Result<()> {
             !definition.id.is_empty() && definition.id.len() <= 64 && ids.insert(&definition.id),
             "step IDs must be unique and bounded"
         );
+        if definition.id == "?" {
+            ensure!(
+                index + 1 == plan.steps.len(),
+                "the unresolved '?' step must be the final step"
+            );
+            ensure!(
+                definition.title.trim() != "?"
+                    && definition.acceptance.trim() != "?"
+                    && definition.title.trim().len() >= 8
+                    && definition.acceptance.trim().len() >= 16,
+                "the final '?' step must explain the unresolved decision and its acceptance"
+            );
+        }
         ensure!(
             !definition.title.trim().is_empty()
                 && definition.title.len() <= 128
